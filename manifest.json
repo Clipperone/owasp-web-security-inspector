@@ -10,7 +10,8 @@
     "storage",
     "cookies",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "webRequest"
   ],
 
   "host_permissions": ["<all_urls>"],
