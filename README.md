@@ -9,9 +9,9 @@ A Chrome Extension (Manifest V3) for developers to inspect and manipulate **cook
 | Tab | What it does |
 |-----|-------------|
 | **Cookies** | List all cookies for the active page. Create, edit (name, value, domain, path, SameSite, expiry, Secure, HttpOnly flags), and delete cookies with inline confirmation. **Export** the visible cookie set as a `curl` command or a Netscape `cookies.txt` file (compatible with yt-dlp, wget, and curl). Cookies whose value is a JWT token show a **`JWT` badge**; clicking the badge instantly sends the value to the **Tokens** tab for analysis. A **Clear All** button (🗑) removes every cookie for the current site at once after an inline confirmation step. |
-| **Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off or delete them without reloading the extension. Use the **Global / This Site** scope toggle to restrict a new rule to the current domain only. Apply **Quick Templates** (e.g. CORS, Authorization, Cache-Control) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag & drop. **Export** all enabled rules as a `curl -H` command. |
+| **Response Headers** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. Security-relevant headers (CSP, HSTS, X-Frame-Options, CORS, etc.) are highlighted with colour-coded badges. Filter requests by URL and expand any row to inspect the full header list. |
+| **Modify Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off or delete them without reloading the extension. Use the **Global / This Site** scope toggle to restrict a new rule to the current domain only. Apply **Quick Templates** (e.g. CORS, Authorization, Cache-Control) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag & drop. **Export** all enabled rules as a `curl -H` command. |
 | **Tokens** | **Real-time JWT decoder**: paste a token and it decodes instantly — no button needed. Displays three collapsible sections (**Header**, **Payload**, **Signature**) with colour-coded JSON syntax highlighting. `exp`, `iat`, and `nbf` claims show the human-readable local date alongside the unix value. A prominent **⚠️ Token Expired** banner appears when `exp` is in the past. Also surfaces JWTs found automatically by the page scanner in `localStorage` / `sessionStorage`. |
-| **Response** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. Security-relevant headers (CSP, HSTS, X-Frame-Options, CORS, etc.) are highlighted with colour-coded badges. Filter requests by URL and expand any row to inspect the full header list. |
 
 ---
 
@@ -108,7 +108,7 @@ When a cookie value is a JWT, a sky-blue **`JWT`** badge appears in the Flags co
 
 ---
 
-### Headers tab
+### Modify Headers tab
 
 #### Inject a Bearer token into every API request
 
@@ -179,11 +179,11 @@ The extension automatically scans the page's web storage on load. Any JWT-shaped
 
 ---
 
-### Response tab
+### Response Headers tab
 
 #### Inspect live HTTP response headers
 
-1. With the extension open, browse or reload a page — the Response tab captures headers as requests complete.
+1. With the extension open, browse or reload a page — the **Response Headers** tab captures headers as requests complete.
 2. Each row shows URL, method, status code, resource type, and timestamp.
 3. Click a row to expand the full header list.
 
@@ -202,7 +202,7 @@ Missing headers are immediately visible by their absence — useful for quick se
 
 #### Filter by URL
 
-Use the search box in the Response tab to show only requests matching a hostname or path segment (e.g. type `api` to focus on XHR calls).
+Use the search box in the **Response Headers** tab to show only requests matching a hostname or path segment (e.g. type `api` to focus on XHR calls).
 
 ---
 
@@ -231,11 +231,11 @@ Use the search box in the Response tab to show only requests matching a hostname
         ├── main.tsx           # ReactDOM.createRoot entry point
         ├── App.tsx            # Root component → <Popup />
         ├── ScopeContext.tsx   # React context: Global / This Site scope toggle
-        ├── Popup.tsx          # Tab shell (Cookies | Headers | Tokens) + scope header
+        ├── Popup.tsx          # Tab shell (Cookies | Response Headers | Modify Headers | Tokens) + scope header
         ├── CookieTab.tsx          # Cookie inspector & editor
         ├── HeadersTab.tsx         # Header rule editor (scope-aware, templates, DnD reorder)
         ├── TokensTab.tsx          # Real-time JWT decoder & storage token viewer
-        └── CurrentHeadersTab.tsx  # Response tab — live HTTP response header cache
+        └── CurrentHeadersTab.tsx  # Response Headers tab — live HTTP response header cache
 ```
 
 ---
@@ -247,8 +247,8 @@ Use the search box in the Response tab to show only requests matching a hostname
 | `cookies` | Read and write cookies for any URL |
 | `declarativeNetRequest` + `declarativeNetRequestWithHostAccess` | Modify HTTP headers via DNR rules |
 | `storage` | Persist header rules and settings in `chrome.storage.local`; cache response headers in `chrome.storage.session` |
-| `activeTab` | Query the active tab URL (used by the Cookies and Headers tabs) |
-| `webRequest` | Intercept HTTP responses to populate the Response tab header cache |
+| `activeTab` | Query the active tab URL (used by the Cookies and Modify Headers tabs) |
+| `webRequest` | Intercept HTTP responses to populate the Response Headers tab cache |
 | `host_permissions: <all_urls>` | Required for cross-origin cookie and header access |
 
 ---
@@ -270,7 +270,7 @@ The `domainScope` field is stored alongside each `HeaderRule` in `chrome.storage
 
 ## Cookie & Header Export
 
-Both the **Cookies** and **Headers** tabs include an **Export** dropdown button that copies data to the clipboard in formats consumed by common CLI tools.
+Both the **Cookies** and **Modify Headers** tabs include an **Export** dropdown button that copies data to the clipboard in formats consumed by common CLI tools.
 
 ### Copy as cURL
 
@@ -281,7 +281,7 @@ Available in both tabs. Produces a bash `curl` command that can be pasted direct
 curl 'https://example.com' \
   -b 'session_id=abc123; user=alice'
 
-# Example output (Headers tab — enabled rules only)
+# Example output (Modify Headers tab — enabled rules only)
 curl 'https://example.com' \
   -H 'Authorization: Bearer eyJ...' \
   -H 'X-Custom-Header: value'
