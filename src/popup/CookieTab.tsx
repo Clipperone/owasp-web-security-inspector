@@ -174,7 +174,9 @@ const Toggle: React.FC<{
 );
 
 // ── CookieTab ──────────────────────────────────────────────────────────────────
-export const CookieTab: React.FC = () => {
+export const CookieTab: React.FC<{
+  onSendToTokens?: (value: string) => void;
+}> = ({ onSendToTokens }) => {
   const [cookies, setCookies]     = useState<chrome.cookies.Cookie[]>([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
@@ -538,7 +540,13 @@ export const CookieTab: React.FC = () => {
                             <span title="Session cookie (expires when browser closes)" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-purple-900/40 text-purple-400 border border-purple-800/50 leading-tight">Ss</span>
                           )}
                           {isJwt(c.value) && (
-                            <span title="Value is a JWT token" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-sky-900/40 text-sky-400 border border-sky-800/50 leading-tight">JWT</span>
+                            <button
+                              title="Open in Tokens tab"
+                              onClick={e => { e.stopPropagation(); onSendToTokens?.(c.value); }}
+                              className="inline-block text-[9px] font-bold px-1 py-px rounded bg-sky-900/40 text-sky-400 border border-sky-800/50 leading-tight hover:bg-sky-800/60 hover:text-sky-300 transition-colors cursor-pointer"
+                            >
+                              JWT
+                            </button>
                           )}
                         </div>
                       </td>

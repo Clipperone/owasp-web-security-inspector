@@ -245,12 +245,23 @@ const TokenCard: React.FC<{
 
 // ── TokensTab ──────────────────────────────────────────────────────────────────
 
-export const TokensTab: React.FC = () => {
+export const TokensTab: React.FC<{
+  initialToken?: string | null;
+  onConsumeToken?: () => void;
+}> = ({ initialToken, onConsumeToken }) => {
   const [scanResult, setScanResult]   = useState<StorageScanResult | null>(null);
   const [loading, setLoading]         = useState(true);
   const [manualRaw, setManualRaw]     = useState('');
   const [manualToken, setManualToken] = useState<TokenData | null>(null);
   const [manualErr, setManualErr]     = useState<string | null>(null);
+
+  // Pre-populate textarea when a token is pushed from another tab
+  useEffect(() => {
+    if (!initialToken) return;
+    handleManualInput(initialToken);
+    onConsumeToken?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialToken]);
 
   // ── Load storage tokens from content script cache ─────────────────────────
   const load = useCallback(async () => {
