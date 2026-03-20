@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { cookieUrl, cookieId, unixToLocalInput, localInputToUnix } from '../utils/cookieUtils';
 import { exportToCurl, exportToNetscape } from '../utils/exporter';
 import { isJwt } from '../utils/jwtUtils';
 
@@ -18,18 +19,8 @@ interface Draft {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** Builds a URL for chrome.cookies APIs from cookie attributes. */
-function cookieUrl(domain: string, path: string, secure: boolean): string {
-  const host = domain.replace(/^\.+/, '');
-  return `${secure ? 'https' : 'http'}://${host}${path || '/'}`;
-}
-
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s;
-}
-
-function cookieId(c: chrome.cookies.Cookie): string {
-  return `${c.name}|${c.domain}|${c.path}`;
 }
 
 function toDraft(c: chrome.cookies.Cookie): Draft {
@@ -56,17 +47,6 @@ function newDraft(domain: string): Draft {
     sameSite:       'unspecified',
     expirationDate: undefined,
   };
-}
-
-function unixToLocalInput(unix: number | undefined): string {
-  if (!unix) return '';
-  return new Date(unix * 1000).toISOString().slice(0, 16);
-}
-
-function localInputToUnix(s: string): number | undefined {
-  if (!s) return undefined;
-  const t = new Date(s).getTime();
-  return isNaN(t) ? undefined : Math.floor(t / 1000);
 }
 
 // ── SVG icons ──────────────────────────────────────────────────────────────────

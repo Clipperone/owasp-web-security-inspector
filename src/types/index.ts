@@ -195,9 +195,8 @@ export interface ExtensionResponse<T = unknown> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const STORAGE_KEYS = {
-  HEADER_RULES:     'headerRules',
-  COOKIE_OVERRIDES: 'cookieOverrides',
-  SETTINGS:         'settings',
+  HEADER_RULES: 'headerRules',
+  SETTINGS:     'settings',
   // Keyed by tab ID string at runtime; not a fixed key like the others
   // but declared here so the shape is documented alongside the rest.
   // e.g. chrome.storage.session.set({ [`storageScan:${tabId}`]: result })
@@ -210,17 +209,12 @@ export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ExtensionSettings {
-  theme: 'light' | 'dark' | 'system';
   /** Automatically attempt JWT decode when a cookie value looks like a token. */
   autoDecodeTokens: boolean;
-  /** Show Chrome notification on rule enable/disable. */
-  showNotifications: boolean;
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
-  theme:              'system',
-  autoDecodeTokens:   true,
-  showNotifications:  false,
+  autoDecodeTokens: true,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

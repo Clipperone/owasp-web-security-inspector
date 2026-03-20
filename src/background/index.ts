@@ -61,9 +61,8 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
       if (reason === 'install') {
         // First-time install: seed storage with factory defaults
         await chrome.storage.local.set({
-          [STORAGE_KEYS.HEADER_RULES]:     [],
-          [STORAGE_KEYS.COOKIE_OVERRIDES]: {},
-          [STORAGE_KEYS.SETTINGS]:         DEFAULT_SETTINGS,
+          [STORAGE_KEYS.HEADER_RULES]: [],
+          [STORAGE_KEYS.SETTINGS]:     DEFAULT_SETTINGS,
         });
       } else if (reason === 'update') {
         // On update: restore only the rules that were enabled before the update

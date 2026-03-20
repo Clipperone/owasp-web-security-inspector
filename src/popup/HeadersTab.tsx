@@ -1,6 +1,7 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
 import { nextRuleId, saveRule, deleteRule, toggleRule } from '../utils/storageUtils';
+import { validateHeaderModification, defaultRuleName } from '../utils/headerUtils';
 import { useScope } from './ScopeContext';
 import { exportToCurl } from '../utils/exporter';
 
@@ -349,8 +350,8 @@ export const HeadersTab: React.FC = () => {
 
   // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSave = async () => {
-    if (!form.header.trim()) { showToast(false, 'Header name is required.'); return; }
-    if (isValueRequired && !form.value.trim()) { showToast(false, 'Header value is required.'); return; }
+    const validationErr = validateHeaderModification(form.header, form.operation, form.value);
+    if (validationErr) { showToast(false, validationErr); return; }
 
     setSaving(true);
     try {
@@ -363,7 +364,7 @@ export const HeadersTab: React.FC = () => {
       const rule: HeaderRule = {
         id,
         priority:        1,
-        name:            form.name.trim() || `${form.operation} ${form.header.trim()}`,
+        name:            form.name.trim() || defaultRuleName(form.operation, form.header),
         enabled:         true,
         urlFilter:       form.urlFilter.trim() || '*://*/*',
         requestHeaders:  form.target === 'request'  ? [mod] : undefined,

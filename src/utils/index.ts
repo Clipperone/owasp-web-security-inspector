@@ -10,7 +10,6 @@ export * from './jwtUtils';
 // Typed wrappers around chrome.storage.local
 export * from './storageUtils';
 
-// Phase 2 stubs — will be populated in upcoming phases
 export * from './cookieUtils';
 export * from './headerUtils';
 

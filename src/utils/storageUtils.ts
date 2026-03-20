@@ -192,6 +192,5 @@ export async function updateSettings(
  */
 export async function resetStorage(): Promise<void> {
   await removeItem(STORAGE_KEYS.HEADER_RULES);
-  await removeItem(STORAGE_KEYS.COOKIE_OVERRIDES);
   await setItem(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
 }
