@@ -458,7 +458,7 @@ export const HeadersTab: React.FC = () => {
               onClick={() => setTplOpen(p => !p)}
               className="px-2 py-1 text-[11px] text-gray-500 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
             >
-              Templates â–¾
+              Templates ▾
             </button>
             {tplOpen && (
               <div className="absolute right-0 top-full mt-1 w-44 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 overflow-hidden">
