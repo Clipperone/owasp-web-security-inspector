@@ -30,6 +30,7 @@
 
 import type {
   ActiveTabInfo,
+  CachedRequest,
   CookieData,
   ExtensionMessage,
   ExtensionResponse,
@@ -192,6 +193,42 @@ export async function updateNetworkRules(rules: HeaderRule[]): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Response header cache  (webRequest → chrome.storage.session per tab)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TAB_HEADERS_MAX = 10;
+
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    if (details.tabId < 0) return; // -1 = no associated tab (e.g. prefetch)
+    void (async () => {
+      try {
+        const key    = `tabHeaders:${details.tabId}`;
+        const stored = await chrome.storage.session.get(key);
+        const prev   = (stored[key] as CachedRequest[] | undefined) ?? [];
+
+        const entry: CachedRequest = {
+          url:             details.url,
+          method:          details.method,
+          resourceType:    details.type,
+          statusCode:      details.statusCode,
+          timestamp:       Date.now(),
+          responseHeaders: details.responseHeaders?.map(h => ({
+            name:  h.name,
+            value: h.value ?? '',
+          })) ?? [],
+        };
+
+        const updated = [entry, ...prev].slice(0, TAB_HEADERS_MAX);
+        await chrome.storage.session.set({ [key]: updated });
+      } catch { /* silent */ }
+    })();
+  },
+  { urls: ['<all_urls>'], types: ['main_frame', 'xmlhttprequest'] },
+  ['responseHeaders'],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Message router
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -329,6 +366,16 @@ async function handleMessage(
           title:  tab.title,
         };
         return { success: true, data: info };
+      }
+
+      // ── Live response header cache ────────────────────────────────────────
+
+      case 'GET_TAB_HEADERS': {
+        const id     = message.payload as number;
+        const key    = `tabHeaders:${id}`;
+        const stored = await chrome.storage.session.get(key);
+        const data   = (stored[key] as CachedRequest[] | undefined) ?? [];
+        return { success: true, data };
       }
 
       // ── Fallthrough ─────────────────────────────────────────────────────
