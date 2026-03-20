@@ -282,15 +282,15 @@ async function handleMessage(
         await deleteRule(id);
         const all = await getRules();
         await updateNetworkRules(all);
-        return { success: true, data: id };
+        return { success: true, data: all };
       }
 
       case 'TOGGLE_HEADER_RULE': {
-        const id      = message.payload as number;
-        const updated = await toggleRule(id);
-        const all     = await getRules();
+        const id = message.payload as number;
+        await toggleRule(id);
+        const all = await getRules();
         await updateNetworkRules(all);
-        return { success: true, data: updated };
+        return { success: true, data: all };
       }
 
       // ── Cookie bridge ───────────────────────────────────────────────────

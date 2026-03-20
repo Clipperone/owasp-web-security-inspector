@@ -1,6 +1,6 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
-import { nextRuleId, saveRule, deleteRule, toggleRule } from '../utils/storageUtils';
+import { nextRuleId, saveRule } from '../utils/storageUtils';
 import { validateHeaderModification, defaultRuleName } from '../utils/headerUtils';
 import { useScope } from './ScopeContext';
 import { exportToCurl } from '../utils/exporter';
@@ -395,18 +395,16 @@ export const HeadersTab: React.FC = () => {
   // â”€â”€ Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleToggle = async (id: number) => {
     try {
-      await toggleRule(id);
       const res = await chrome.runtime.sendMessage({ type: 'TOGGLE_HEADER_RULE', payload: id });
-      if (res?.success) await load();
+      if (res?.success) setRules(res.data as HeaderRule[]);
     } catch { /* silent */ }
   };
 
-  // â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Delete ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   const handleDelete = async (id: number) => {
     try {
-      await deleteRule(id);
       const res = await chrome.runtime.sendMessage({ type: 'DELETE_HEADER_RULE', payload: id });
-      if (res?.success) await load();
+      if (res?.success) setRules(res.data as HeaderRule[]);
     } catch { /* silent */ }
   };
 
