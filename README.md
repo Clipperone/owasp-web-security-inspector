@@ -9,8 +9,9 @@ A Chrome Extension (Manifest V3) for developers to inspect and manipulate **cook
 | Tab | What it does |
 |-----|-------------|
 | **Cookies** | List all cookies for the active page. Create, edit (name, value, domain, path, SameSite, expiry, Secure, HttpOnly flags), and delete cookies with inline confirmation. **Export** the visible cookie set as a `curl` command or a Netscape `cookies.txt` file (compatible with yt-dlp, wget, and curl). |
-| **Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off or delete them without reloading the extension. Use the **Global / This Site** scope toggle to restrict a new rule to the current domain only. **Export** all enabled rules as a `curl -H` command. |
-| **Tokens** | Decode any JWT manually (paste & decode) or automatically from tokens found by the page scanner in `localStorage` / `sessionStorage`. Displays a colour-coded JSON view of header and payload, expiry status, and raw segment breakdown. |
+| **Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off or delete them without reloading the extension. Use the **Global / This Site** scope toggle to restrict a new rule to the current domain only. Apply **Quick Templates** (e.g. CORS, Authorization, Cache-Control) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag & drop. **Export** all enabled rules as a `curl -H` command. |
+| **Tokens** | **Real-time JWT decoder**: paste a token and it decodes instantly — no button needed. Displays three collapsible sections (**Header**, **Payload**, **Signature**) with colour-coded JSON syntax highlighting. `exp`, `iat`, and `nbf` claims show the human-readable local date alongside the unix value. A prominent **⚠️ Token Expired** banner appears when `exp` is in the past. Also surfaces JWTs found automatically by the page scanner in `localStorage` / `sessionStorage`. |
+| **Response** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. Security-relevant headers (CSP, HSTS, X-Frame-Options, CORS, etc.) are highlighted with colour-coded badges. Filter requests by URL and expand any row to inspect the full header list. |
 
 ---
 
@@ -99,9 +100,10 @@ During development use `npm run dev` so `dist/` rebuilds on every save; Chrome p
         ├── App.tsx            # Root component → <Popup />
         ├── ScopeContext.tsx   # React context: Global / This Site scope toggle
         ├── Popup.tsx          # Tab shell (Cookies | Headers | Tokens) + scope header
-        ├── CookieTab.tsx      # Cookie inspector & editor
-        ├── HeadersTab.tsx     # Header rule editor (scope-aware)
-        └── TokensTab.tsx      # JWT decoder & storage token viewer
+        ├── CookieTab.tsx          # Cookie inspector & editor
+        ├── HeadersTab.tsx         # Header rule editor (scope-aware, templates, DnD reorder)
+        ├── TokensTab.tsx          # Real-time JWT decoder & storage token viewer
+        └── CurrentHeadersTab.tsx  # Response tab — live HTTP response header cache
 ```
 
 ---
@@ -112,8 +114,9 @@ During development use `npm run dev` so `dist/` rebuilds on every save; Chrome p
 |-----------|--------|
 | `cookies` | Read and write cookies for any URL |
 | `declarativeNetRequest` + `declarativeNetRequestWithHostAccess` | Modify HTTP headers via DNR rules |
-| `storage` | Persist header rules and settings in `chrome.storage.local` |
+| `storage` | Persist header rules and settings in `chrome.storage.local`; cache response headers in `chrome.storage.session` |
 | `scripting` + `activeTab` | Inject the content script and query the active tab |
+| `webRequest` | Intercept HTTP responses to populate the Response tab header cache |
 | `host_permissions: <all_urls>` | Required for cross-origin cookie and header access |
 
 ---
