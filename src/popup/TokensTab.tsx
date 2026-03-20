@@ -2,6 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { StorageEntry, StorageScanResult, TokenData } from '../types';
 import { decodeJwt, formatExpiry, isJwt } from '../utils/jwtUtils';
 
+// ── Timestamp helper ───────────────────────────────────────────────────────────
+
+function unixToLocal(unix: number): string {
+  return new Date(unix * 1_000).toLocaleString();
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface DecodedView {
@@ -31,11 +37,25 @@ const IconChevron: React.FC<{ open: boolean }> = ({ open }) => (
   </svg>
 );
 
+const TIMESTAMP_CLAIMS = new Set(['exp', 'iat', 'nbf']);
+
 /** Render a JSON value as a syntax-highlighted tree (pure CSS, no lib). */
-function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }): React.ReactElement {
+function JsonTree({ value, depth = 0, parentKey }: { value: unknown; depth?: number; parentKey?: string }): React.ReactElement {
   if (value === null)              return <span className="text-gray-500">null</span>;
   if (typeof value === 'boolean')  return <span className="text-yellow-400">{String(value)}</span>;
-  if (typeof value === 'number')   return <span className="text-sky-400">{value}</span>;
+  if (typeof value === 'number') {
+    const isTs = parentKey !== undefined && TIMESTAMP_CLAIMS.has(parentKey);
+    return (
+      <span>
+        <span className="text-sky-400">{value}</span>
+        {isTs && (
+          <span className="ml-1.5 text-[10px] text-gray-600 font-sans">
+            ({unixToLocal(value)})
+          </span>
+        )}
+      </span>
+    );
+  }
   if (typeof value === 'string')   return <span className="text-emerald-400">"{value}"</span>;
   if (Array.isArray(value)) {
     if (value.length === 0) return <span className="text-gray-500">[]</span>;
@@ -65,7 +85,7 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }): Rea
             <span key={k} className="block">
               <span className="text-purple-300">"{k}"</span>
               <span className="text-gray-500">: </span>
-              <JsonTree value={v} depth={depth + 1} />
+              <JsonTree value={v} depth={depth + 1} parentKey={k} />
               {i < entries.length - 1 && <span className="text-gray-600">,</span>}
             </span>
           ))}
@@ -83,11 +103,13 @@ const TokenCard: React.FC<{
   view: DecodedView;
   onDismiss?: () => void;
 }> = ({ view, onDismiss }) => {
-  const [headerOpen, setHeaderOpen]   = useState(false);
+  const [headerOpen,  setHeaderOpen]  = useState(false);
   const [payloadOpen, setPayloadOpen] = useState(true);
+  const [sigOpen,     setSigOpen]     = useState(false);
 
   const { token } = view;
   const expiry = formatExpiry(token);
+  const parts  = token.raw.split('.');
 
   return (
     <div className="border border-gray-800 rounded-lg overflow-hidden text-[11px] bg-gray-900/50">
@@ -133,15 +155,30 @@ const TokenCard: React.FC<{
         )}
       </div>
 
-      {/* Raw token */}
+      {/* ⚠️ Expired banner */}
+      {token.isExpired && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-950/60 border-b border-red-900/50">
+          <span className="text-base leading-none select-none">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] font-semibold text-red-400">Token Expired</p>
+            {token.expiresAt && (
+              <p className="text-[10px] text-red-600 mt-px">
+                Expired on {token.expiresAt.toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Raw token — three segments colour-coded */}
       <div className="px-3 py-2 border-b border-gray-800/60">
         <p className="text-[10px] text-gray-600 mb-1 uppercase tracking-wider">Raw token</p>
-        <div className="text-[10px] font-mono text-gray-600 break-all leading-relaxed bg-gray-950/60 rounded px-2 py-1.5">
-          <span className="text-blue-400">{token.raw.split('.')[0]}</span>
+        <div className="text-[10px] font-mono break-all leading-relaxed bg-gray-950/60 rounded px-2 py-1.5">
+          <span className="text-blue-400">{parts[0]}</span>
           <span className="text-gray-700">.</span>
-          <span className="text-emerald-400">{token.raw.split('.')[1]}</span>
+          <span className="text-emerald-400">{parts[1]}</span>
           <span className="text-gray-700">.</span>
-          <span className="text-gray-500">{token.raw.split('.')[2]}</span>
+          <span className="text-gray-500">{parts[2]}</span>
         </div>
       </div>
 
@@ -151,28 +188,53 @@ const TokenCard: React.FC<{
           onClick={() => setHeaderOpen(p => !p)}
           className="flex items-center gap-2 w-full px-3 py-2 hover:bg-gray-900/40 transition-colors"
         >
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-medium flex-1 text-left">Header</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+          <span className="text-[10px] uppercase tracking-wider text-blue-400 font-semibold flex-1 text-left">Header</span>
           <IconChevron open={headerOpen} />
         </button>
         {headerOpen && (
-          <div className="px-3 pb-2 font-mono text-[11px] leading-relaxed">
+          <div className="px-3 pb-2 font-mono text-[11px] leading-relaxed border-t border-gray-800/40">
             <JsonTree value={token.header} />
           </div>
         )}
       </div>
 
       {/* Payload section */}
-      <div>
+      <div className="border-b border-gray-800/60">
         <button
           onClick={() => setPayloadOpen(p => !p)}
           className="flex items-center gap-2 w-full px-3 py-2 hover:bg-gray-900/40 transition-colors"
         >
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-medium flex-1 text-left">Payload</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+          <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold flex-1 text-left">Payload</span>
           <IconChevron open={payloadOpen} />
         </button>
         {payloadOpen && (
-          <div className="px-3 pb-3 font-mono text-[11px] leading-relaxed">
+          <div className="px-3 pb-3 font-mono text-[11px] leading-relaxed border-t border-gray-800/40">
             <JsonTree value={token.payload} />
+          </div>
+        )}
+      </div>
+
+      {/* Signature section */}
+      <div>
+        <button
+          onClick={() => setSigOpen(p => !p)}
+          className="flex items-center gap-2 w-full px-3 py-2 hover:bg-gray-900/40 transition-colors"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-gray-500 shrink-0" />
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold flex-1 text-left">Signature</span>
+          <span className="text-[9px] text-gray-700 mr-1 select-none">not verified</span>
+          <IconChevron open={sigOpen} />
+        </button>
+        {sigOpen && (
+          <div className="px-3 pb-3 border-t border-gray-800/40">
+            <p className="text-[10px] text-gray-700 mb-1.5 leading-relaxed">
+              Signature verification requires the secret or public key and is intentionally not performed in this tool.
+            </p>
+            <div className="font-mono text-[10px] text-gray-500 break-all bg-gray-950/60 rounded px-2 py-1.5">
+              {token.signature || <span className="text-gray-700 italic">empty (alg: none)</span>}
+            </div>
           </div>
         )}
       </div>
@@ -187,8 +249,8 @@ export const TokensTab: React.FC = () => {
   const [scanResult, setScanResult]   = useState<StorageScanResult | null>(null);
   const [loading, setLoading]         = useState(true);
   const [manualRaw, setManualRaw]     = useState('');
+  const [manualToken, setManualToken] = useState<TokenData | null>(null);
   const [manualErr, setManualErr]     = useState<string | null>(null);
-  const [manualViews, setManualViews] = useState<DecodedView[]>([]);
 
   // ── Load storage tokens from content script cache ─────────────────────────
   const load = useCallback(async () => {
@@ -218,28 +280,30 @@ export const TokensTab: React.FC = () => {
     return acc;
   }, []);
 
-  // ── Manual decode ─────────────────────────────────────────────────────────
-  const handleManualDecode = () => {
-    const raw = manualRaw.trim();
-    if (!raw) { setManualErr('Paste a JWT token to decode.'); return; }
-    if (!isJwt(raw)) { setManualErr('Input does not look like a JWT (expected 3 Base64Url segments).'); return; }
-
-    const result = decodeJwt(raw);
-    if (!result.ok) { setManualErr(result.error); return; }
-
+  // ── Real-time manual decode ────────────────────────────────────────────────
+  const handleManualInput = (raw: string) => {
+    setManualRaw(raw);
+    const trimmed = raw.trim();
+    if (!trimmed) { setManualToken(null); setManualErr(null); return; }
+    if (!isJwt(trimmed)) {
+      setManualToken(null);
+      setManualErr('Not a valid JWT — expecting three Base64Url segments separated by dots.');
+      return;
+    }
+    const result = decodeJwt(trimmed);
+    if (!result.ok) { setManualToken(null); setManualErr(result.error); return; }
+    setManualToken(result.token);
     setManualErr(null);
-    setManualViews(prev => {
-      // Avoid exact duplicates
-      if (prev.some(v => v.raw === raw)) return prev;
-      return [{ source: 'manual', label: 'Pasted token', raw, token: result.token }, ...prev];
-    });
-    setManualRaw('');
   };
 
-  const dismissManual = (raw: string) =>
-    setManualViews(prev => prev.filter(v => v.raw !== raw));
+  const manualView: DecodedView | null = manualToken
+    ? { source: 'manual', label: 'Live preview', raw: manualToken.raw, token: manualToken }
+    : null;
 
-  const allViews = [...manualViews, ...storageViews];
+  const allViews = [
+    ...(manualView ? [manualView] : []),
+    ...storageViews,
+  ];
 
   const scannedAt = scanResult?.scannedAt
     ? new Date(scanResult.scannedAt).toLocaleTimeString()
@@ -253,21 +317,29 @@ export const TokensTab: React.FC = () => {
         <p className="text-[10px] uppercase tracking-widest text-gray-600 font-medium select-none">
           Decode a token
         </p>
-        <div className="flex gap-2">
+        <div className="relative">
           <textarea
             value={manualRaw}
-            onChange={e => { setManualRaw(e.target.value); setManualErr(null); }}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleManualDecode(); }}
-            placeholder="Paste a JWT here…"
-            rows={2}
-            className="flex-1 min-w-0 px-2 py-1.5 text-[11px] font-mono bg-gray-800 border border-gray-700 rounded text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600 transition-colors resize-none leading-relaxed"
+            onChange={e => handleManualInput(e.target.value)}
+            placeholder="Paste a JWT here — decoded in real time…"
+            rows={3}
+            className={[
+              'w-full px-2 py-1.5 text-[11px] font-mono bg-gray-800 border rounded text-gray-300 placeholder-gray-600',
+              'focus:outline-none transition-colors resize-none leading-relaxed',
+              manualErr  ? 'border-red-700 focus:border-red-600'
+              : manualToken ? 'border-emerald-700 focus:border-emerald-600'
+              : 'border-gray-700 focus:border-blue-600',
+            ].join(' ')}
           />
-          <button
-            onClick={handleManualDecode}
-            className="px-3 py-1.5 self-stretch text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 rounded transition-colors shrink-0"
-          >
-            Decode
-          </button>
+          {manualRaw && (
+            <button
+              onClick={() => { setManualRaw(''); setManualToken(null); setManualErr(null); }}
+              className="absolute top-1.5 right-1.5 p-0.5 rounded text-gray-600 hover:text-gray-300 hover:bg-gray-700 transition-colors"
+              title="Clear"
+            >
+              <IconX className="w-3 h-3" />
+            </button>
+          )}
         </div>
         {manualErr && (
           <p className="text-[11px] text-red-400">{manualErr}</p>
@@ -308,7 +380,6 @@ export const TokensTab: React.FC = () => {
           <TokenCard
             key={view.raw}
             view={view}
-            onDismiss={view.source === 'manual' ? () => dismissManual(view.raw) : undefined}
           />
         ))}
       </div>
