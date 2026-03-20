@@ -140,21 +140,6 @@ export interface StorageScanResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Live response header cache types  (webRequest → background → popup)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** A single HTTP response captured by the background webRequest listener. */
-export interface CachedRequest {
-  url:             string;
-  method:          string;
-  resourceType:    string;
-  statusCode:      number;
-  /** Date.now() at the moment of capture. */
-  timestamp:       number;
-  responseHeaders: { name: string; value: string }[];
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Messaging types  (popup ↔ background ↔ content)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -174,8 +159,6 @@ export type MessageType =
   | 'GET_STORAGE_TOKENS'    // popup requests cached results for active tab
   // Tab info
   | 'GET_ACTIVE_TAB_INFO'
-  // Live response header cache
-  | 'GET_TAB_HEADERS'        // popup requests cached headers for a tabId
   // Rule ordering
   | 'REORDER_HEADER_RULES'; // popup sends new ordered id array
 

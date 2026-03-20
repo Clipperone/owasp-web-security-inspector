@@ -10,8 +10,7 @@
     "storage",
     "cookies",
     "scripting",
-    "activeTab",
-    "webRequest"
+    "activeTab"
   ],
 
   "host_permissions": ["<all_urls>"],
@@ -26,8 +25,6 @@
       "128": "icons/icon128.png"
     }
   },
-
-  "devtools_page": "src/devtools/devtools.html",
 
   "background": {
     "service_worker": "src/background/index.ts",

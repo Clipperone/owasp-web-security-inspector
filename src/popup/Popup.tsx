@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
 import { CookieTab } from './CookieTab';
-import { CurrentHeadersTab } from './CurrentHeadersTab';
 import { HeadersTab } from './HeadersTab';
 import { ScopeProvider, useScope } from './ScopeContext';
 import { TokensTab } from './TokensTab';
 
-type TabId = 'cookies' | 'headers' | 'tokens' | 'response';
+type TabId = 'cookies' | 'headers' | 'tokens';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'cookies',  label: 'Cookies'  },
-  { id: 'headers',  label: 'Headers'  },
-  { id: 'tokens',   label: 'Tokens'   },
-  { id: 'response', label: 'Response' },
+  { id: 'cookies', label: 'Cookies' },
+  { id: 'headers', label: 'Headers' },
+  { id: 'tokens',  label: 'Tokens'  },
 ];
 
 // ── Scope toggle (rendered inside ScopeProvider) ─────────────────────────────
@@ -102,10 +100,9 @@ const PopupInner: React.FC = () => {
 
       {/* ── Panel area ─────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-hidden">
-        {active === 'cookies'  && <CookieTab />}
-        {active === 'headers'  && <HeadersTab />}
-        {active === 'tokens'   && <TokensTab />}
-        {active === 'response' && <CurrentHeadersTab />}
+        {active === 'cookies' && <CookieTab />}
+        {active === 'headers' && <HeadersTab />}
+        {active === 'tokens'  && <TokensTab />}
       </main>
 
     </div>
