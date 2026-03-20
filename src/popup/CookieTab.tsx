@@ -340,8 +340,17 @@ export const CookieTab: React.FC = () => {
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="Filter by name, value, or domain…"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] bg-gray-900 border border-gray-700 rounded text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600 transition-colors"
+            className={`w-full pl-6 py-1.5 text-[11px] bg-gray-900 border border-gray-700 rounded text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600 transition-colors ${filter ? 'pr-6' : 'pr-2'}`}
           />
+          {filter && (
+            <button
+              onClick={() => setFilter('')}
+              title="Clear filter"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-300 transition-colors"
+            >
+              <IconX className="w-3 h-3" />
+            </button>
+          )}
         </div>
         <span className="text-[10px] text-gray-600 tabular-nums shrink-0 select-none">
           {visible.length}/{cookies.length}
@@ -464,7 +473,7 @@ export const CookieTab: React.FC = () => {
 
                     {/* Flags */}
                     <td className="px-3 py-1.5 text-center">
-                      <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                      <div className="flex items-center justify-center gap-0.5 flex-nowrap">
                         {c.secure && (
                           <span
                             title="Secure (HTTPS only)"

@@ -158,7 +158,9 @@ export type MessageType =
   | 'STORAGE_SCAN_RESULT'   // content script pushes scan results
   | 'GET_STORAGE_TOKENS'    // popup requests cached results for active tab
   // Tab info
-  | 'GET_ACTIVE_TAB_INFO';
+  | 'GET_ACTIVE_TAB_INFO'
+  // Rule ordering
+  | 'REORDER_HEADER_RULES'; // popup sends new ordered id array
 
 export interface ExtensionMessage<T = unknown> {
   type: MessageType;

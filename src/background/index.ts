@@ -300,6 +300,20 @@ async function handleMessage(
         const result   = (stored[cacheKey] as StorageScanResult | undefined) ?? null;
         return { success: true, data: result };
       }
+      // ── Rule reordering ─────────────────────────────────────────────────
+
+      case 'REORDER_HEADER_RULES': {
+        const orderedIds = message.payload as number[];
+        const existing   = await getRules();
+        const idToRule   = new Map(existing.map(r => [r.id, r]));
+        const reordered  = orderedIds
+          .map(id => idToRule.get(id))
+          .filter((r): r is HeaderRule => r !== undefined);
+        await chrome.storage.local.set({ [STORAGE_KEYS.HEADER_RULES]: reordered });
+        await updateNetworkRules(reordered);
+        return { success: true, data: reordered };
+      }
+
       // ── Active tab info ─────────────────────────────────────────────────
 
       case 'GET_ACTIVE_TAB_INFO': {

@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
 import { nextRuleId, saveRule, deleteRule, toggleRule } from '../utils/storageUtils';
 import { useScope } from './ScopeContext';
 import { exportToCurl } from '../utils/exporter';
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface FormState {
   name:      string;
@@ -24,7 +24,41 @@ const EMPTY_FORM: FormState = {
   target:    'request',
 };
 
-// ── Helpers / icons ────────────────────────────────────────────────────────────
+// â”€â”€ Quick templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+interface Template {
+  label:     string;
+  header:    string;
+  value:     string;
+  operation: HeaderOperation;
+  target:    'request' | 'response';
+}
+
+const TEMPLATES: Template[] = [
+  {
+    label:     'Bearer Token',
+    header:    'Authorization',
+    value:     'Bearer YOUR_TOKEN_HERE',
+    operation: 'set',
+    target:    'request',
+  },
+  {
+    label:     'CORS Bypass',
+    header:    'Access-Control-Allow-Origin',
+    value:     '*',
+    operation: 'set',
+    target:    'response',
+  },
+  {
+    label:     'Debug Header',
+    header:    'X-Debug',
+    value:     'true',
+    operation: 'set',
+    target:    'request',
+  },
+];
+
+// â”€â”€ Helpers / icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const IconPlus: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -44,6 +78,12 @@ const IconChevron: React.FC<{ open: boolean }> = ({ open }) => (
     viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
   >
     <path strokeLinecap="round" strokeLinejoin="round" d="m19 9-7 7-7-7" />
+  </svg>
+);
+
+const IconGrip: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8.5 6a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM8.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM8.5 18a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM15.5 6a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM15.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM15.5 18a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
   </svg>
 );
 
@@ -89,14 +129,19 @@ const TextInput: React.FC<{
   />
 );
 
-// ── Rule row ───────────────────────────────────────────────────────────────────
+// â”€â”€ Rule row (drag-and-drop aware) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const RuleRow: React.FC<{
-  rule: HeaderRule;
-  onToggle: (id: number) => void;
-  onDelete: (id: number) => void;
-}> = ({ rule, onToggle, onDelete }) => {
-  const [open, setOpen] = useState(false);
+  rule:        HeaderRule;
+  index:       number;
+  dragging:    number | null;
+  onToggle:    (id: number) => void;
+  onDelete:    (id: number) => void;
+  onDragStart: (index: number) => void;
+  onDragOver:  (index: number) => void;
+  onDrop:      () => void;
+}> = ({ rule, index, dragging, onToggle, onDelete, onDragStart, onDragOver, onDrop }) => {
+  const [open, setOpen]         = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
   const mods: HeaderModification[] = [
@@ -104,10 +149,30 @@ const RuleRow: React.FC<{
     ...(rule.responseHeaders ?? []).map(m => ({ ...m, _target: 'response' as const })),
   ];
 
+  const isDragging = dragging === index;
+
   return (
-    <div className={`border-b border-gray-800/60 text-[11px] ${rule.enabled ? '' : 'opacity-50'}`}>
+    <div
+      draggable
+      onDragStart={() => onDragStart(index)}
+      onDragOver={e => { e.preventDefault(); onDragOver(index); }}
+      onDrop={onDrop}
+      className={[
+        'border-b border-gray-800/60 text-[11px] transition-opacity duration-150',
+        rule.enabled ? '' : 'opacity-50',
+        isDragging ? 'opacity-40 bg-blue-900/10' : '',
+      ].join(' ')}
+    >
       {/* Summary row */}
       <div className="flex items-center gap-2 px-3 py-2 group hover:bg-gray-900/40 transition-colors">
+        {/* Drag handle */}
+        <span
+          className="text-gray-700 hover:text-gray-500 cursor-grab active:cursor-grabbing shrink-0"
+          title="Drag to reorder"
+        >
+          <IconGrip className="w-3 h-3" />
+        </span>
+
         {/* Toggle */}
         <button
           onClick={() => onToggle(rule.id)}
@@ -131,15 +196,15 @@ const RuleRow: React.FC<{
           <span className="truncate text-gray-300 font-medium">
             {rule.name || <span className="text-gray-600 italic">(unnamed)</span>}
           </span>
-          <span className="truncate text-gray-600 text-[10px]">— {rule.urlFilter}</span>
+          <span className="truncate text-gray-600 text-[10px]">â€” {rule.urlFilter}</span>
           <IconChevron open={open} />
         </button>
 
         {/* Delete */}
         {confirmDel ? (
           <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={() => onDelete(rule.id)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">✓</button>
-            <button onClick={() => setConfirmDel(false)} className="text-[10px] text-gray-600 hover:text-gray-400">✕</button>
+            <button onClick={() => onDelete(rule.id)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">âœ“</button>
+            <button onClick={() => setConfirmDel(false)} className="text-[10px] text-gray-600 hover:text-gray-400">âœ•</button>
           </div>
         ) : (
           <button
@@ -172,19 +237,24 @@ const RuleRow: React.FC<{
               <code className="text-gray-400 truncate">{m.header}</code>
               {m.value !== undefined && (
                 <>
-                  <span className="text-gray-700">→</span>
+                  <span className="text-gray-700">â†’</span>
                   <code className="text-gray-500 truncate">{m.value}</code>
                 </>
               )}
             </div>
           ))}
+          {rule.domainScope && (
+            <div className="text-[10px] text-gray-600 font-mono">
+              scope: {rule.domainScope}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-// ── HeadersTab ─────────────────────────────────────────────────────────────────
+// â”€â”€ HeadersTab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const HeadersTab: React.FC = () => {
   const [rules, setRules]   = useState<HeaderRule[]>([]);
@@ -193,10 +263,23 @@ export const HeadersTab: React.FC = () => {
   const [toast, setToast]   = useState<{ ok: boolean; msg: string } | null>(null);
   const toastTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mode, activeDomain } = useScope();
+
+  // Export dropdown
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef                    = useRef<HTMLDivElement>(null);
 
-  // ── Load ─────────────────────────────────────────────────────────────────────
+  // Template dropdown
+  const [tplOpen, setTplOpen]  = useState(false);
+  const tplRef                  = useRef<HTMLDivElement>(null);
+
+  // Active tab info
+  const [tabUrl, setTabUrl] = useState('');
+
+  // Drag state
+  const dragIndex = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
+
+  // â”€â”€ Load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const load = useCallback(async () => {
     try {
       const res = await chrome.runtime.sendMessage({ type: 'GET_HEADER_RULES' });
@@ -206,29 +289,65 @@ export const HeadersTab: React.FC = () => {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Fetch active tab URL for the live-preview badge
   useEffect(() => {
-    if (!exportOpen) return;
+    void (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        setTabUrl(tab?.url ?? '');
+      } catch { /* silent */ }
+    })();
+  }, []);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+      if (tplRef.current   && !tplRef.current.contains(e.target as Node))   setTplOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [exportOpen]);
+  }, []);
 
-  // ── Toast helper ──────────────────────────────────────────────────────────────
+  // â”€â”€ Live preview badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const matchingCount = (() => {
+    if (!tabUrl) return 0;
+    let hostname = '';
+    try { hostname = new URL(tabUrl).hostname; } catch { return 0; }
+    return rules.filter(r => {
+      if (!r.enabled) return false;
+      if (r.domainScope && r.domainScope !== hostname) return false;
+      // Simple wildcard check: does the URL pattern plausibly match?
+      const pattern = r.urlFilter.replace(/\*/g, '.*').replace(/\?/g, '.');
+      try { return new RegExp(pattern).test(tabUrl); } catch { return true; }
+    }).length;
+  })();
+
+  // â”€â”€ Toast helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const showToast = (ok: boolean, msg: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ ok, msg });
     toastTimer.current = setTimeout(() => setToast(null), 2800);
   };
 
-  // ── Form helpers ──────────────────────────────────────────────────────────────
+  // â”€â”€ Form helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const patchForm = <K extends keyof FormState>(key: K, val: FormState[K]) =>
     setForm(prev => ({ ...prev, [key]: val }));
 
   const isValueRequired = form.operation !== 'remove';
 
-  // ── Save ──────────────────────────────────────────────────────────────────────
+  const applyTemplate = (tpl: Template) => {
+    setForm(prev => ({
+      ...prev,
+      header:    tpl.header,
+      value:     tpl.value,
+      operation: tpl.operation,
+      target:    tpl.target,
+    }));
+    setTplOpen(false);
+  };
+
+  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleSave = async () => {
     if (!form.header.trim()) { showToast(false, 'Header name is required.'); return; }
     if (isValueRequired && !form.value.trim()) { showToast(false, 'Header value is required.'); return; }
@@ -272,7 +391,7 @@ export const HeadersTab: React.FC = () => {
     }
   };
 
-  // ── Toggle ────────────────────────────────────────────────────────────────────
+  // â”€â”€ Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleToggle = async (id: number) => {
     try {
       await toggleRule(id);
@@ -281,7 +400,7 @@ export const HeadersTab: React.FC = () => {
     } catch { /* silent */ }
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────────
+  // â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleDelete = async (id: number) => {
     try {
       await deleteRule(id);
@@ -290,12 +409,33 @@ export const HeadersTab: React.FC = () => {
     } catch { /* silent */ }
   };
 
-  // ── Export ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Drag & drop reordering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleDragStart = (index: number) => {
+    dragIndex.current = index;
+    setDragging(index);
+  };
+
+  const handleDragOver = (index: number) => {
+    if (dragIndex.current === null || dragIndex.current === index) return;
+    const next = [...rules];
+    const [moved] = next.splice(dragIndex.current, 1);
+    next.splice(index, 0, moved);
+    dragIndex.current = index;
+    setRules(next);
+  };
+
+  const handleDrop = () => {
+    setDragging(null);
+    dragIndex.current = null;
+    const orderedIds = rules.map(r => r.id);
+    void chrome.runtime.sendMessage({ type: 'REORDER_HEADER_RULES', payload: orderedIds });
+  };
+
+  // â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleExportCurl = async () => {
     setExportOpen(false);
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const url = tab?.url ?? 'https://example.com';
+      const url = tabUrl || 'https://example.com';
       await navigator.clipboard.writeText(exportToCurl(url, [], rules));
       showToast(true, 'Copied to clipboard!');
     } catch {
@@ -304,13 +444,37 @@ export const HeadersTab: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden max-w-[600px] mx-auto w-full">
 
-      {/* ── Add rule form ──────────────────────────────────────────────────── */}
+      {/* â”€â”€ Add rule form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="border-b border-gray-800 bg-gray-900/30 px-3 py-3 space-y-2 shrink-0">
-        <p className="text-[10px] uppercase tracking-widest text-gray-600 font-medium select-none mb-1">
-          New rule
-        </p>
+        {/* Form header with template picker */}
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[10px] uppercase tracking-widest text-gray-600 font-medium select-none">
+            New rule
+          </p>
+          <div ref={tplRef} className="relative">
+            <button
+              onClick={() => setTplOpen(p => !p)}
+              className="px-2 py-1 text-[11px] text-gray-500 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
+            >
+              Templates â–¾
+            </button>
+            {tplOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 overflow-hidden">
+                {TEMPLATES.map(tpl => (
+                  <button
+                    key={tpl.label}
+                    onClick={() => applyTemplate(tpl)}
+                    className="w-full text-left px-3 py-2 text-[11px] text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors"
+                  >
+                    {tpl.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Row 1: Name */}
         <TextInput
@@ -324,7 +488,7 @@ export const HeadersTab: React.FC = () => {
         <TextInput
           value={form.urlFilter}
           onChange={v => patchForm('urlFilter', v)}
-          placeholder="URL filter — e.g. *://*.example.com/*"
+          placeholder="URL filter â€” e.g. *://*.example.com/*"
           className="w-full"
         />
 
@@ -365,27 +529,40 @@ export const HeadersTab: React.FC = () => {
           />
         )}
 
-        {/* Row 5: save button */}
+        {/* Row 5: live badge + toast + save button */}
         <div className="flex items-center justify-between gap-2 pt-0.5">
-          {toast ? (
-            <p className={`text-[11px] font-medium truncate ${toast.ok ? 'text-emerald-400' : 'text-red-400'}`}>
-              {toast.ok ? '✓ ' : '✕ '}{toast.msg}
-            </p>
-          ) : (
-            <span />
-          )}
+          <div className="flex items-center gap-2 min-w-0">
+            {toast ? (
+              <p className={`text-[11px] font-medium truncate ${toast.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                {toast.ok ? 'âœ“ ' : 'âœ• '}{toast.msg}
+              </p>
+            ) : tabUrl ? (
+              <span className={[
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border select-none',
+                matchingCount > 0
+                  ? 'bg-blue-900/30 text-blue-400 border-blue-800/50'
+                  : 'bg-gray-800/60 text-gray-600 border-gray-700/50',
+              ].join(' ')}>
+                <span className={`w-1.5 h-1.5 rounded-full ${matchingCount > 0 ? 'bg-blue-400' : 'bg-gray-600'}`} />
+                {matchingCount} rule{matchingCount !== 1 ? 's' : ''} active on this tab
+              </span>
+            ) : (
+              <span />
+            )}
+          </div>
           <button
             onClick={() => { void handleSave(); }}
             disabled={saving}
             className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors shrink-0"
           >
             <IconPlus className="w-3 h-3" />
-            {saving ? 'Saving…' : 'Add rule'}
+            {saving ? 'Savingâ€¦' : 'Add rule'}
           </button>
         </div>
       </div>
 
-      {/* ── Rule list ─────────────────────────────────────────────────────── */}      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 bg-gray-900/20 shrink-0">
+      {/* â”€â”€ Rule list header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 bg-gray-900/20 shrink-0">
         <span className="text-[10px] text-gray-600 uppercase tracking-widest font-medium select-none">
           {rules.length > 0 ? `Rules (${rules.length})` : 'Rules'}
         </span>
@@ -409,18 +586,28 @@ export const HeadersTab: React.FC = () => {
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
+
+      {/* â”€â”€ Rule list (drag-sortable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      <div
+        className="flex-1 overflow-y-auto"
+        onDragEnd={() => { setDragging(null); dragIndex.current = null; }}
+      >
         {rules.length === 0 ? (
           <div className="flex items-center justify-center h-20 text-gray-700 text-[11px] text-center px-6 select-none">
             No rules yet. Add one above.
           </div>
         ) : (
-          rules.map(r => (
+          rules.map((r, i) => (
             <RuleRow
               key={r.id}
               rule={r}
+              index={i}
+              dragging={dragging}
               onToggle={id => { void handleToggle(id); }}
               onDelete={id => { void handleDelete(id); }}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
             />
           ))
         )}
@@ -429,3 +616,5 @@ export const HeadersTab: React.FC = () => {
     </div>
   );
 };
+
+
