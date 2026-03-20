@@ -90,6 +90,12 @@ export interface HeaderRule {
   requestHeaders?: HeaderModification[];
   /** Modifications applied to incoming response headers. */
   responseHeaders?: HeaderModification[];
+  /**
+   * When set, the DNR rule is restricted to this domain only
+   * (maps to `requestDomains` in the RuleCondition).
+   * When absent or undefined the rule applies to all URLs matched by `urlFilter`.
+   */
+  domainScope?: string;
   /** ISO 8601 creation timestamp. */
   createdAt: string;
   /** ISO 8601 last-updated timestamp. */

@@ -156,6 +156,7 @@ function toDNRRule(rule: HeaderRule): chrome.declarativeNetRequest.Rule {
       // Apply to all resource types unless scoped further in a future version
       resourceTypes:  ['main_frame', 'sub_frame', 'xmlhttprequest', 'other'] as
                        chrome.declarativeNetRequest.ResourceType[],
+      ...(rule.domainScope ? { requestDomains: [rule.domainScope] } : {}),
     },
     action,
   };

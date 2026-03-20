@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
 import { nextRuleId, saveRule, deleteRule, toggleRule } from '../utils/storageUtils';
+import { useScope } from './ScopeContext';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -190,6 +191,7 @@ export const HeadersTab: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [toast, setToast]   = useState<{ ok: boolean; msg: string } | null>(null);
   const toastTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { mode, activeDomain } = useScope();
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -235,6 +237,7 @@ export const HeadersTab: React.FC = () => {
         urlFilter:       form.urlFilter.trim() || '*://*/*',
         requestHeaders:  form.target === 'request'  ? [mod] : undefined,
         responseHeaders: form.target === 'response' ? [mod] : undefined,
+        domainScope:     mode === 'domain' && activeDomain ? activeDomain : undefined,
         createdAt:       now,
         updatedAt:       now,
       };
