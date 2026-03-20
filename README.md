@@ -74,6 +74,138 @@ During development use `npm run dev` so `dist/` rebuilds on every save; Chrome p
 
 ---
 
+## Usage Examples
+
+### Cookies tab
+
+#### Inspect and edit a session cookie
+
+1. Navigate to the target site and open the extension.
+2. The **Cookies** tab lists every cookie scoped to the current URL.
+3. Click the **pencil** icon on a row to expand the inline editor — change the `value`, toggle `HttpOnly`, adjust the expiry, then click **Save**.
+4. Reload the page; the site now sends the modified cookie.
+
+#### Export cookies for CLI tools (yt-dlp, curl, wget)
+
+1. Use the search box to filter to the cookies you need (e.g. type `session`).
+2. Click **Export → Copy as Netscape cookies.txt**.
+3. Paste the clipboard content into a `cookies.txt` file and use it:
+
+```bash
+yt-dlp --cookies cookies.txt "https://example.com/video"
+curl --cookie cookies.txt "https://example.com/api/data"
+```
+
+#### Clean up before an authentication test
+
+1. Click the **🗑 Clear All** button in the toolbar.
+2. Confirm in the red banner — all cookies for the current site are deleted instantly.
+3. Reload the page to verify the unauthenticated state.
+
+#### Spot and analyse a JWT stored in a cookie
+
+When a cookie value is a JWT, a sky-blue **`JWT`** badge appears in the Flags column. Click the badge — the extension switches to the **Tokens** tab with the value pre-loaded and decoded.
+
+---
+
+### Headers tab
+
+#### Inject a Bearer token into every API request
+
+1. Open the extension on any page that calls your API.
+2. Click **+** to open the rule form, or use **Templates ▾ → Authorization Bearer** to pre-fill it.
+3. Set:
+   - **URL filter**: `*api.example.com/*`
+   - **Operation**: `set`
+   - **Header**: `Authorization`
+   - **Value**: `Bearer <your-token>`
+   - **Type**: Request
+4. Click **Save rule**. Every request matching the pattern now carries the header — no code change required.
+
+#### Bypass CORS errors during local development
+
+1. Click **Templates ▾ → CORS**.
+2. The form pre-fills `Access-Control-Allow-Origin: *` as a **response** header on `<all_urls>`.
+3. Restrict the rule to your dev server only: set the URL filter to `*localhost*` and enable **Site only** scope.
+4. Save — browser CORS checks now pass for responses from localhost.
+
+#### Remove a response header
+
+1. Fill in the rule form manually:
+   - **Header**: `X-Frame-Options`
+   - **Operation**: `remove`
+   - **Type**: Response
+2. Save. The header is stripped from every matching response, allowing the page to be embedded in an iframe.
+
+#### Reorder and toggle rules
+
+- Drag rules up or down to change priority (higher in the list = evaluated first by Chrome's DNR engine).
+- Use the toggle switch on each row to enable/disable a rule without deleting it.
+
+#### Export all active rules as cURL
+
+Click **Export → Copy as cURL** to get a ready-to-run shell command with all enabled `-H` flags:
+
+```bash
+curl 'https://api.example.com/endpoint' \
+  -H 'Authorization: Bearer eyJ...' \
+  -H 'X-Debug: true'
+```
+
+---
+
+### Tokens tab
+
+#### Decode a JWT instantly
+
+1. Paste any JWT string into the text area at the top — decoding happens in real time, no button needed.
+2. Three collapsible sections appear: **Header** (algorithm, type), **Payload** (claims), **Signature** (raw base64url).
+3. Claims `exp`, `iat`, and `nbf` show both the unix timestamp and the human-readable local date/time.
+
+#### Check whether a token is expired
+
+A prominent **⚠️ Token Expired** banner appears at the top of the card when the `exp` claim is in the past, together with the exact expiry date. Useful for debugging 401 errors without opening jwt.io.
+
+Example expired token output:
+```
+⚠️ Token Expired
+Expired on 15/01/2024, 09:32:00
+alg: HS256 · typ: JWT · expired 14 months ago
+```
+
+#### Find JWTs stored in localStorage / sessionStorage
+
+The extension automatically scans the page's web storage on load. Any JWT-shaped values found are listed below the manual input area with a **Storage** badge showing the storage key they came from (e.g. `access_token`, `auth`).
+
+---
+
+### Response tab
+
+#### Inspect live HTTP response headers
+
+1. With the extension open, browse or reload a page — the Response tab captures headers as requests complete.
+2. Each row shows URL, method, status code, resource type, and timestamp.
+3. Click a row to expand the full header list.
+
+#### Check security posture of a site
+
+Security-relevant headers are highlighted with colour-coded badges:
+
+| Badge | Header | Meaning |
+|-------|--------|---------|
+| 🟢 | `Strict-Transport-Security` | HSTS configured |
+| 🟡 | `Content-Security-Policy` | CSP present |
+| 🔴 | `X-Frame-Options` | Clickjacking protection |
+| 🔵 | `Access-Control-Allow-Origin` | CORS policy |
+
+Missing headers are immediately visible by their absence — useful for quick security reviews.
+
+#### Filter by URL
+
+Use the search box in the Response tab to show only requests matching a hostname or path segment (e.g. type `api` to focus on XHR calls).
+
+---
+
 ## Project Structure
 
 ```
@@ -115,7 +247,7 @@ During development use `npm run dev` so `dist/` rebuilds on every save; Chrome p
 | `cookies` | Read and write cookies for any URL |
 | `declarativeNetRequest` + `declarativeNetRequestWithHostAccess` | Modify HTTP headers via DNR rules |
 | `storage` | Persist header rules and settings in `chrome.storage.local`; cache response headers in `chrome.storage.session` |
-| `scripting` + `activeTab` | Inject the content script and query the active tab |
+| `activeTab` | Query the active tab URL (used by the Cookies and Headers tabs) |
 | `webRequest` | Intercept HTTP responses to populate the Response tab header cache |
 | `host_permissions: <all_urls>` | Required for cross-origin cookie and header access |
 
