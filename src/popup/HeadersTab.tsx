@@ -378,10 +378,10 @@ export const HeadersTab: React.FC = () => {
       const res = await chrome.runtime.sendMessage({ type: 'ADD_HEADER_RULE', payload: rule });
 
       if (res?.success) {
-        setRules(res.data as HeaderRule[] ?? (await (async () => { const r = await chrome.runtime.sendMessage({ type: 'GET_HEADER_RULES' }); return r.data as HeaderRule[]; })()));
+        // Background returns the full updated list — set it directly, no extra GET round-trip
+        setRules(res.data as HeaderRule[]);
         setForm(EMPTY_FORM);
         showToast(true, 'Rule saved successfully.');
-        await load();
       } else {
         showToast(false, res?.error ?? 'Failed to save rule.');
       }
@@ -535,7 +535,7 @@ export const HeadersTab: React.FC = () => {
           <div className="flex items-center gap-2 min-w-0">
             {toast ? (
               <p className={`text-[11px] font-medium truncate ${toast.ok ? 'text-emerald-400' : 'text-red-400'}`}>
-                {toast.ok ? 'âœ“ ' : 'âœ• '}{toast.msg}
+                {toast.ok ? '✔ ' : '✖ '}{toast.msg}
               </p>
             ) : tabUrl ? (
               <span className={[
@@ -557,7 +557,7 @@ export const HeadersTab: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors shrink-0"
           >
             <IconPlus className="w-3 h-3" />
-            {saving ? 'Savingâ€¦' : 'Add rule'}
+            {saving ? 'Saving…' : 'Add rule'}
           </button>
         </div>
       </div>

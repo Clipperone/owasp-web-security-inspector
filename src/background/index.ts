@@ -273,7 +273,8 @@ async function handleMessage(
         await saveRule(rule);
         const all = await getRules();
         await updateNetworkRules(all);
-        return { success: true, data: rule };
+        // Return the full updated list so the popup can refresh in one round-trip
+        return { success: true, data: all };
       }
 
       case 'DELETE_HEADER_RULE': {
