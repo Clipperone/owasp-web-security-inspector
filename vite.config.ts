@@ -9,7 +9,6 @@ export default defineConfig({
     react(),
     crx({ manifest }),
   ],
-  // Keeps source maps small and readable during development
   build: {
     sourcemap: true,
   },

@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { CookieTab } from './CookieTab';
+import { CurrentHeadersTab } from './CurrentHeadersTab';
 import { HeadersTab } from './HeadersTab';
 import { ScopeProvider, useScope } from './ScopeContext';
 import { TokensTab } from './TokensTab';
 
-type TabId = 'cookies' | 'headers' | 'tokens';
+type TabId = 'cookies' | 'headers' | 'tokens' | 'response';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'cookies', label: 'Cookies' },
-  { id: 'headers', label: 'Headers' },
-  { id: 'tokens',  label: 'Tokens'  },
+  { id: 'cookies',  label: 'Cookies'  },
+  { id: 'headers',  label: 'Headers'  },
+  { id: 'tokens',   label: 'Tokens'   },
+  { id: 'response', label: 'Response' },
 ];
 
 // ── Scope toggle (rendered inside ScopeProvider) ─────────────────────────────
@@ -54,7 +56,13 @@ const ScopeToggle: React.FC = () => {
 
 // ── Inner popup (must be inside ScopeProvider) ─────────────────────────────────
 const PopupInner: React.FC = () => {
-  const [active, setActive] = useState<TabId>('cookies');
+  const [active, setActive]         = useState<TabId>('cookies');
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+
+  const sendToTokens = (value: string) => {
+    setPendingToken(value);
+    setActive('tokens');
+  };
 
   return (
     <div className="w-[580px] h-[680px] bg-gray-950 text-gray-100 flex flex-col overflow-hidden font-mono text-xs">
@@ -100,9 +108,10 @@ const PopupInner: React.FC = () => {
 
       {/* ── Panel area ─────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-hidden">
-        {active === 'cookies' && <CookieTab />}
-        {active === 'headers' && <HeadersTab />}
-        {active === 'tokens'  && <TokensTab />}
+        {active === 'cookies'  && <CookieTab onSendToTokens={sendToTokens} />}
+        {active === 'headers'  && <HeadersTab />}
+        {active === 'tokens'   && <TokensTab initialToken={pendingToken} onConsumeToken={() => setPendingToken(null)} />}
+        {active === 'response' && <CurrentHeadersTab />}
       </main>
 
     </div>
