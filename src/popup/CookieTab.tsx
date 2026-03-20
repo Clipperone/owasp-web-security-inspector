@@ -187,6 +187,7 @@ export const CookieTab: React.FC = () => {
   const [saveErr, setSaveErr]               = useState<string | null>(null);
   const [saving, setSaving]                 = useState(false);
   const [confirmDelete, setConfirmDelete]   = useState<chrome.cookies.Cookie | null>(null);
+  const [editingId, setEditingId]           = useState<string | null>(null);
   const [exportOpen, setExportOpen]         = useState(false);
   const [clipToast, setClipToast]           = useState<string | null>(null);
   const exportRef                            = useRef<HTMLDivElement>(null);
@@ -257,12 +258,14 @@ export const CookieTab: React.FC = () => {
   const openEdit = (c: chrome.cookies.Cookie | null) => {
     setOriginal(c);
     setDraft(c ? toDraft(c) : newDraft(tabDomain));
+    setEditingId(c ? cookieId(c) : '__new__');
     setSaveErr(null);
   };
 
   const closeEdit = () => {
     setDraft(null);
     setOriginal(null);
+    setEditingId(null);
     setSaveErr(null);
   };
 
@@ -420,13 +423,13 @@ export const CookieTab: React.FC = () => {
           </div>
         )}
 
-        {!loading && !error && tabUrl && visible.length === 0 && (
+        {!loading && !error && tabUrl && visible.length === 0 && editingId !== '__new__' && (
           <div className="flex items-center justify-center h-20 text-gray-600 text-[11px] text-center px-6">
             {filter ? 'No cookies match the filter.' : 'No cookies found for this page.'}
           </div>
         )}
 
-        {!error && tabUrl && visible.length > 0 && (
+        {!error && tabUrl && (visible.length > 0 || editingId === '__new__') && (
           <table className="w-full border-collapse">
             <thead className="sticky top-0 z-10 bg-gray-900 border-b border-gray-800">
               <tr className="text-gray-600 text-[10px] uppercase tracking-wider">
@@ -443,245 +446,179 @@ export const CookieTab: React.FC = () => {
               </tr>
             </thead>
             <tbody>
+              {/* ── Inline form for new cookie (inserted at top) ── */}
+              {editingId === '__new__' && draft && (
+                <tr>
+                  <td colSpan={5} className="p-0 border-b border-blue-900/50">
+                    <div className="border-l-2 border-blue-600/60 bg-gray-950/60 px-4 py-3 space-y-2.5">
+                      <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">New Cookie</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Name" required>
+                          <TextInput value={draft.name} onChange={v => patch('name', v)} placeholder="cookie_name" mono />
+                        </Field>
+                        <Field label="Value">
+                          <TextInput value={draft.value} onChange={v => patch('value', v)} placeholder="cookie_value" mono />
+                        </Field>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <Field label="Domain">
+                          <TextInput value={draft.domain} onChange={v => patch('domain', v)} placeholder=".example.com" mono />
+                        </Field>
+                        <Field label="Path">
+                          <TextInput value={draft.path} onChange={v => patch('path', v || '/')} placeholder="/" mono />
+                        </Field>
+                        <Field label="SameSite">
+                          <select value={draft.sameSite} onChange={e => patch('sameSite', e.target.value as SameSite)} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors">
+                            <option value="unspecified">Unspecified</option>
+                            <option value="lax">Lax</option>
+                            <option value="strict">Strict</option>
+                            <option value="no_restriction">None</option>
+                          </select>
+                        </Field>
+                      </div>
+                      <div className="flex items-end gap-4">
+                        <div className="flex-1">
+                          <Field label="Expires (session if empty)">
+                            <input type="datetime-local" value={unixToLocalInput(draft.expirationDate)} onChange={e => patch('expirationDate', localInputToUnix(e.target.value))} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors" />
+                          </Field>
+                        </div>
+                        <div className="flex items-center gap-4 pb-0.5">
+                          <Toggle label="Secure" checked={draft.secure} onChange={v => patch('secure', v)} hint="HTTPS only" />
+                          <Toggle label="HttpOnly" checked={draft.httpOnly} onChange={v => patch('httpOnly', v)} hint="No JS access" />
+                        </div>
+                      </div>
+                      {saveErr && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{saveErr}</p>}
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={closeEdit} className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
+                        <button onClick={() => { void handleSave(); }} disabled={saving} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Create'}</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+
               {visible.map(c => {
                 const id = cookieId(c);
+                const isEditing = editingId === id;
                 const isConfirm = confirmDelete && cookieId(confirmDelete) === id;
 
                 return (
-                  <tr
-                    key={id}
-                    className="border-b border-gray-800/50 hover:bg-gray-900/50 group text-[11px]"
-                  >
-                    {/* Name */}
-                    <td className="px-3 py-1.5 font-mono text-gray-200 max-w-0">
-                      <div className="truncate" title={c.name}>
-                        {c.name || <span className="text-gray-700 italic text-[10px]">(empty)</span>}
-                      </div>
-                    </td>
-
-                    {/* Value */}
-                    <td className="px-3 py-1.5 font-mono text-gray-500 max-w-0">
-                      <div className="truncate" title={c.value}>
-                        {c.value ? truncate(c.value, 38) : <span className="text-gray-700 text-[10px]">(empty)</span>}
-                      </div>
-                    </td>
-
-                    {/* Domain */}
-                    <td className="px-3 py-1.5 text-gray-500 max-w-0">
-                      <div className="truncate" title={c.domain}>{c.domain}</div>
-                    </td>
-
-                    {/* Flags */}
-                    <td className="px-3 py-1.5 text-center">
-                      <div className="flex items-center justify-center gap-0.5 flex-nowrap">
-                        {c.secure && (
-                          <span
-                            title="Secure (HTTPS only)"
-                            className="inline-block text-[9px] font-bold px-1 py-px rounded bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 leading-tight"
-                          >
-                            S
-                          </span>
-                        )}
-                        {c.httpOnly && (
-                          <span
-                            title="HttpOnly (not accessible via JavaScript)"
-                            className="inline-block text-[9px] font-bold px-1 py-px rounded bg-amber-900/40 text-amber-400 border border-amber-800/50 leading-tight"
-                          >
-                            H
-                          </span>
-                        )}
-                        {!c.expirationDate && (
-                          <span
-                            title="Session cookie (expires when browser closes)"
-                            className="inline-block text-[9px] font-bold px-1 py-px rounded bg-purple-900/40 text-purple-400 border border-purple-800/50 leading-tight"
-                          >
-                            Ss
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-2 py-1.5 text-right">
-                      {isConfirm ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => void handleDelete(c)}
-                            title="Confirm delete"
-                            className="text-[10px] text-red-400 hover:text-red-300 font-semibold transition-colors"
-                          >
-                            ✓
-                          </button>
-                          <button
-                            onClick={() => setConfirmDelete(null)}
-                            title="Cancel"
-                            className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors"
-                          >
-                            ✕
-                          </button>
+                  <React.Fragment key={id}>
+                    <tr className={['border-b border-gray-800/50 group text-[11px]', isEditing ? 'bg-blue-950/20' : 'hover:bg-gray-900/50'].join(' ')}>
+                      {/* Name */}
+                      <td className="px-3 py-1.5 font-mono text-gray-200 max-w-0">
+                        <div className="truncate" title={c.name}>
+                          {c.name || <span className="text-gray-700 italic text-[10px]">(empty)</span>}
                         </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => openEdit(c)}
-                            title="Edit cookie"
-                            className="p-1 rounded text-gray-600 hover:text-blue-400 hover:bg-gray-800 transition-colors"
-                          >
-                            <IconPencil className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => setConfirmDelete(c)}
-                            title="Delete cookie"
-                            className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-gray-800 transition-colors"
-                          >
-                            <IconTrash className="w-3 h-3" />
-                          </button>
+                      </td>
+
+                      {/* Value */}
+                      <td className="px-3 py-1.5 font-mono text-gray-500 max-w-0">
+                        <div className="truncate" title={c.value}>
+                          {c.value ? truncate(c.value, 38) : <span className="text-gray-700 text-[10px]">(empty)</span>}
                         </div>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+
+                      {/* Domain */}
+                      <td className="px-3 py-1.5 text-gray-500 max-w-0">
+                        <div className="truncate" title={c.domain}>{c.domain}</div>
+                      </td>
+
+                      {/* Flags */}
+                      <td className="px-3 py-1.5 text-center">
+                        <div className="flex items-center justify-center gap-0.5 flex-nowrap">
+                          {c.secure && (
+                            <span title="Secure (HTTPS only)" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 leading-tight">S</span>
+                          )}
+                          {c.httpOnly && (
+                            <span title="HttpOnly (not accessible via JavaScript)" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-amber-900/40 text-amber-400 border border-amber-800/50 leading-tight">H</span>
+                          )}
+                          {!c.expirationDate && (
+                            <span title="Session cookie (expires when browser closes)" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-purple-900/40 text-purple-400 border border-purple-800/50 leading-tight">Ss</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-2 py-1.5 text-right">
+                        {isConfirm ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => void handleDelete(c)} title="Confirm delete" className="text-[10px] text-red-400 hover:text-red-300 font-semibold transition-colors">✓</button>
+                            <button onClick={() => setConfirmDelete(null)} title="Cancel" className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">✕</button>
+                          </div>
+                        ) : (
+                          <div className={['flex items-center justify-end gap-0.5 transition-opacity', isEditing ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'].join(' ')}>
+                            <button
+                              onClick={() => isEditing ? closeEdit() : openEdit(c)}
+                              title={isEditing ? 'Close editor' : 'Edit cookie'}
+                              className={['p-1 rounded hover:bg-gray-800 transition-colors', isEditing ? 'text-blue-400' : 'text-gray-600 hover:text-blue-400'].join(' ')}
+                            >
+                              <IconPencil className="w-3 h-3" />
+                            </button>
+                            <button onClick={() => setConfirmDelete(c)} title="Delete cookie" className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-gray-800 transition-colors">
+                              <IconTrash className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* ── Inline edit accordion ── */}
+                    {isEditing && draft && (
+                      <tr>
+                        <td colSpan={5} className="p-0 border-b border-blue-900/50">
+                          <div className="border-l-2 border-blue-600/60 bg-gray-950/60 px-4 py-3 space-y-2.5">
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Name" required>
+                                <TextInput value={draft.name} onChange={v => patch('name', v)} placeholder="cookie_name" mono />
+                              </Field>
+                              <Field label="Value">
+                                <TextInput value={draft.value} onChange={v => patch('value', v)} placeholder="cookie_value" mono />
+                              </Field>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                              <Field label="Domain">
+                                <TextInput value={draft.domain} onChange={v => patch('domain', v)} placeholder=".example.com" mono />
+                              </Field>
+                              <Field label="Path">
+                                <TextInput value={draft.path} onChange={v => patch('path', v || '/')} placeholder="/" mono />
+                              </Field>
+                              <Field label="SameSite">
+                                <select value={draft.sameSite} onChange={e => patch('sameSite', e.target.value as SameSite)} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors">
+                                  <option value="unspecified">Unspecified</option>
+                                  <option value="lax">Lax</option>
+                                  <option value="strict">Strict</option>
+                                  <option value="no_restriction">None</option>
+                                </select>
+                              </Field>
+                            </div>
+                            <div className="flex items-end gap-4">
+                              <div className="flex-1">
+                                <Field label="Expires (session if empty)">
+                                  <input type="datetime-local" value={unixToLocalInput(draft.expirationDate)} onChange={e => patch('expirationDate', localInputToUnix(e.target.value))} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors" />
+                                </Field>
+                              </div>
+                              <div className="flex items-center gap-4 pb-0.5">
+                                <Toggle label="Secure" checked={draft.secure} onChange={v => patch('secure', v)} hint="HTTPS only" />
+                                <Toggle label="HttpOnly" checked={draft.httpOnly} onChange={v => patch('httpOnly', v)} hint="No JS access" />
+                              </div>
+                            </div>
+                            {saveErr && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{saveErr}</p>}
+                            <div className="flex items-center justify-end gap-2">
+                              <button onClick={closeEdit} className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
+                              <button onClick={() => { void handleSave(); }} disabled={saving} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Update'}</button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
         )}
       </div>
-
-      {/* ── Edit / Add sheet ─────────────────────────────────────────────────── */}
-      {draft && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-end">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/70"
-            onClick={closeEdit}
-          />
-
-          {/* Bottom sheet */}
-          <div className="relative bg-gray-900 border-t border-gray-700 rounded-t-xl shadow-2xl overflow-y-auto max-h-[92%]">
-
-            {/* Sheet header */}
-            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-800 shrink-0">
-              <h2 className="text-xs font-semibold text-gray-200">
-                {original ? `Edit — ${truncate(original.name, 40)}` : 'New Cookie'}
-              </h2>
-              <button
-                onClick={closeEdit}
-                className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
-              >
-                <IconX className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="px-4 py-3 space-y-3">
-
-              {/* Name + Value */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Name" required>
-                  <TextInput
-                    value={draft.name}
-                    onChange={v => patch('name', v)}
-                    placeholder="cookie_name"
-                    mono
-                  />
-                </Field>
-                <Field label="Value">
-                  <TextInput
-                    value={draft.value}
-                    onChange={v => patch('value', v)}
-                    placeholder="cookie_value"
-                    mono
-                  />
-                </Field>
-              </div>
-
-              {/* Domain + Path */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Domain">
-                  <TextInput
-                    value={draft.domain}
-                    onChange={v => patch('domain', v)}
-                    placeholder=".example.com"
-                    mono
-                  />
-                </Field>
-                <Field label="Path">
-                  <TextInput
-                    value={draft.path}
-                    onChange={v => patch('path', v || '/')}
-                    placeholder="/"
-                    mono
-                  />
-                </Field>
-              </div>
-
-              {/* SameSite + Expires */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="SameSite">
-                  <select
-                    value={draft.sameSite}
-                    onChange={e => patch('sameSite', e.target.value as SameSite)}
-                    className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors"
-                  >
-                    <option value="unspecified">Unspecified</option>
-                    <option value="lax">Lax</option>
-                    <option value="strict">Strict</option>
-                    <option value="no_restriction">None (no restriction)</option>
-                  </select>
-                </Field>
-                <Field label="Expires (session if empty)">
-                  <input
-                    type="datetime-local"
-                    value={unixToLocalInput(draft.expirationDate)}
-                    onChange={e => patch('expirationDate', localInputToUnix(e.target.value))}
-                    className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors"
-                  />
-                </Field>
-              </div>
-
-              {/* Flags */}
-              <div className="flex items-center gap-6 pt-1">
-                <Toggle
-                  label="Secure"
-                  checked={draft.secure}
-                  onChange={v => patch('secure', v)}
-                  hint="Transmit over HTTPS only"
-                />
-                <Toggle
-                  label="HttpOnly"
-                  checked={draft.httpOnly}
-                  onChange={v => patch('httpOnly', v)}
-                  hint="Not accessible via document.cookie"
-                />
-              </div>
-
-              {/* Save error */}
-              {saveErr && (
-                <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">
-                  {saveErr}
-                </p>
-              )}
-
-              {/* Actions */}
-              <div className="flex items-center justify-end gap-2 pt-1 pb-1">
-                <button
-                  onClick={closeEdit}
-                  className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => { void handleSave(); }}
-                  disabled={saving}
-                  className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
-                >
-                  {saving ? 'Saving…' : (original ? 'Update' : 'Create')}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
