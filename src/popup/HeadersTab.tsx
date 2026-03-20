@@ -197,15 +197,15 @@ const RuleRow: React.FC<{
           <span className="truncate text-gray-300 font-medium">
             {rule.name || <span className="text-gray-600 italic">(unnamed)</span>}
           </span>
-          <span className="truncate text-gray-600 text-[10px]">â€” {rule.urlFilter}</span>
+          <span className="truncate text-gray-600 text-[10px]">– {rule.urlFilter}</span>
           <IconChevron open={open} />
         </button>
 
         {/* Delete */}
         {confirmDel ? (
           <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={() => onDelete(rule.id)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">âœ“</button>
-            <button onClick={() => setConfirmDel(false)} className="text-[10px] text-gray-600 hover:text-gray-400">âœ•</button>
+          <button onClick={() => onDelete(rule.id)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">✔</button>
+            <button onClick={() => setConfirmDel(false)} className="text-[10px] text-gray-600 hover:text-gray-400">✖</button>
           </div>
         ) : (
           <button
@@ -238,7 +238,7 @@ const RuleRow: React.FC<{
               <code className="text-gray-400 truncate">{m.header}</code>
               {m.value !== undefined && (
                 <>
-                  <span className="text-gray-700">â†’</span>
+                  <span className="text-gray-700">→</span>
                   <code className="text-gray-500 truncate">{m.value}</code>
                 </>
               )}
