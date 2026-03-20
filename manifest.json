@@ -9,7 +9,6 @@
     "declarativeNetRequestWithHostAccess",
     "storage",
     "cookies",
-    "scripting",
     "activeTab",
     "webRequest"
   ],
