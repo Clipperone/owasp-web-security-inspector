@@ -73,10 +73,6 @@ export const CurrentHeadersTab: React.FC = () => {
   }, [tabId, fetchHeaders]);
 
   // ── Actions ───────────────────────────────────────────────────────────────────
-  const handleRefresh = () => {
-    if (tabId !== null) void fetchHeaders(tabId);
-  };
-
   const handleClear = () => {
     if (tabId === null) return;
     void chrome.storage.session.remove(`tabHeaders:${tabId}`).then(() => {
@@ -99,12 +95,6 @@ export const CurrentHeadersTab: React.FC = () => {
         <p className="flex-1 min-w-0 text-[10px] text-gray-600 font-mono truncate" title={tabUrl}>
           {tabUrl || 'No active tab'}
         </p>
-        <button
-          onClick={handleRefresh}
-          className="px-2 py-1 text-[11px] border border-gray-700 bg-gray-800 text-gray-500 hover:text-gray-300 rounded transition-colors shrink-0"
-        >
-          ↻ Refresh
-        </button>
         <button
           onClick={handleClear}
           disabled={requests.length === 0}
