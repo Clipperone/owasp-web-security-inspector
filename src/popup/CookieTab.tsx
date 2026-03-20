@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { exportToCurl, exportToNetscape } from '../utils/exporter';
+import { isJwt } from '../utils/jwtUtils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type SameSite = chrome.cookies.SameSiteStatus;
@@ -535,6 +536,9 @@ export const CookieTab: React.FC = () => {
                           )}
                           {!c.expirationDate && (
                             <span title="Session cookie (expires when browser closes)" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-purple-900/40 text-purple-400 border border-purple-800/50 leading-tight">Ss</span>
+                          )}
+                          {isJwt(c.value) && (
+                            <span title="Value is a JWT token" className="inline-block text-[9px] font-bold px-1 py-px rounded bg-sky-900/40 text-sky-400 border border-sky-800/50 leading-tight">JWT</span>
                           )}
                         </div>
                       </td>
