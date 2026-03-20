@@ -9,8 +9,14 @@ export default defineConfig({
     react(),
     crx({ manifest }),
   ],
-  // Keeps source maps small and readable during development
   build: {
+    rollupOptions: {
+      input: {
+        // crxjs handles popup/background from the manifest; panel.html must be
+        // added explicitly because it is only referenced as a string in devtools.ts
+        'devtools-panel': 'src/devtools/panel.html',
+      },
+    },
     sourcemap: true,
   },
 });
