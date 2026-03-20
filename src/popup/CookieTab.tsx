@@ -193,6 +193,7 @@ export const CookieTab: React.FC<{
   const [editingId, setEditingId]           = useState<string | null>(null);
   const [exportOpen, setExportOpen]         = useState(false);
   const [clipToast, setClipToast]           = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
   const exportRef                            = useRef<HTMLDivElement>(null);
   const clipTimerRef                         = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -319,6 +320,17 @@ export const CookieTab: React.FC<{
     }
   };
 
+  // ── Clear all ─────────────────────────────────────────────────────────────────
+  const handleClearAll = async () => {
+    setConfirmClearAll(false);
+    await Promise.allSettled(
+      cookies.map(c =>
+        chrome.cookies.remove({ url: cookieUrl(c.domain, c.path, c.secure), name: c.name }),
+      ),
+    );
+    void load();
+  };
+
   // ── Export ────────────────────────────────────────────────────────────────────
   const copyAndToast = async (text: string, label: string) => {
     try {
@@ -369,6 +381,14 @@ export const CookieTab: React.FC<{
           <IconPlus className="w-3.5 h-3.5" />
         </button>
         <button
+          onClick={() => setConfirmClearAll(true)}
+          disabled={cookies.length === 0}
+          title="Clear all cookies for this site"
+          className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <IconTrash className="w-3.5 h-3.5" />
+        </button>
+        <button
           onClick={() => { void load(); }}
           title="Refresh"
           className="p-1.5 rounded text-gray-500 hover:text-blue-400 hover:bg-gray-800 transition-colors"
@@ -404,6 +424,23 @@ export const CookieTab: React.FC<{
           )}
         </div>
       </div>
+
+      {/* Clear-all confirmation banner */}
+      {confirmClearAll && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-950/40 border-b border-red-800/50 shrink-0">
+          <span className="flex-1 text-[11px] text-red-300">
+            Delete all <span className="font-semibold">{cookies.length}</span> cookie{cookies.length !== 1 ? 's' : ''} for <span className="font-semibold">{tabDomain}</span>?
+          </span>
+          <button
+            onClick={() => setConfirmClearAll(false)}
+            className="px-2 py-1 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+          >Cancel</button>
+          <button
+            onClick={() => { void handleClearAll(); }}
+            className="px-2 py-1 text-[11px] font-medium text-white bg-red-700 hover:bg-red-600 rounded transition-colors"
+          >Delete all</button>
+        </div>
+      )}
 
       {/* Clipboard toast */}
       {clipToast && (
