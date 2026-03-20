@@ -8,10 +8,10 @@ import { TokensTab } from './TokensTab';
 type TabId = 'cookies' | 'headers' | 'tokens' | 'response';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'cookies',  label: 'Cookies'  },
-  { id: 'headers',  label: 'Headers'  },
-  { id: 'tokens',   label: 'Tokens'   },
-  { id: 'response', label: 'Response' },
+  { id: 'cookies',  label: 'Cookies'          },
+  { id: 'response', label: 'Response Headers' },
+  { id: 'headers',  label: 'Modify Headers'   },
+  { id: 'tokens',   label: 'Tokens'           },
 ];
 
 // ── Scope toggle (rendered inside ScopeProvider) ─────────────────────────────
