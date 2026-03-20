@@ -9,7 +9,7 @@ A Chrome Extension (Manifest V3) for developers to inspect and manipulate **cook
 | Tab | What it does |
 |-----|-------------|
 | **Cookies** | List all cookies for the active page. Create, edit (name, value, domain, path, SameSite, expiry, Secure, HttpOnly flags), and delete cookies with inline confirmation. |
-| **Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off or delete them without reloading the extension. |
+| **Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off or delete them without reloading the extension. Use the **Global / This Site** scope toggle to restrict a new rule to the current domain only. |
 | **Tokens** | Decode any JWT manually (paste & decode) or automatically from tokens found by the page scanner in `localStorage` / `sessionStorage`. Displays a colour-coded JSON view of header and payload, expiry status, and raw segment breakdown. |
 
 ---
@@ -96,9 +96,10 @@ During development use `npm run dev` so `dist/` rebuilds on every save; Chrome p
     └── popup/
         ├── main.tsx           # ReactDOM.createRoot entry point
         ├── App.tsx            # Root component → <Popup />
-        ├── Popup.tsx          # Tab shell (Cookies | Headers | Tokens)
+        ├── ScopeContext.tsx   # React context: Global / This Site scope toggle
+        ├── Popup.tsx          # Tab shell (Cookies | Headers | Tokens) + scope header
         ├── CookieTab.tsx      # Cookie inspector & editor
-        ├── HeadersTab.tsx     # Header rule editor
+        ├── HeadersTab.tsx     # Header rule editor (scope-aware)
         └── TokensTab.tsx      # JWT decoder & storage token viewer
 ```
 
@@ -113,6 +114,21 @@ During development use `npm run dev` so `dist/` rebuilds on every save; Chrome p
 | `storage` | Persist header rules and settings in `chrome.storage.local` |
 | `scripting` + `activeTab` | Inject the content script and query the active tab |
 | `host_permissions: <all_urls>` | Required for cross-origin cookie and header access |
+
+---
+
+## Tab-Scoped Header Rules
+
+The popup header contains a **Global / This Site** toggle that controls the scope of newly created header rules.
+
+| Mode | Behaviour |
+|------|-----------|
+| **Global** (default) | The rule applies to all URLs matching the `urlFilter` pattern, regardless of which site you're on. |
+| **This Site** | The rule is restricted to the hostname of the currently active tab (e.g. `example.com`). Chrome's DNR `requestDomains` condition is used under the hood — the rule fires only when the initiator domain matches. |
+
+The toggle is disabled when the active tab is not a regular web page (e.g. `chrome://` or `about:` pages). The current hostname is displayed next to the toggle for clarity.
+
+The `domainScope` field is stored alongside each `HeaderRule` in `chrome.storage.local`. Existing rules without `domainScope` continue to behave as global rules.
 
 ---
 

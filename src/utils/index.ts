@@ -13,3 +13,6 @@ export * from './storageUtils';
 // Phase 2 stubs — will be populated in upcoming phases
 export * from './cookieUtils';
 export * from './headerUtils';
+
+// Cookie and header export utilities (cURL, Netscape cookies.txt)
+export * from './exporter';

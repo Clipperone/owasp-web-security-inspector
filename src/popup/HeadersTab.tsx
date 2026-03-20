@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
 import { nextRuleId, saveRule, deleteRule, toggleRule } from '../utils/storageUtils';
 import { useScope } from './ScopeContext';
+import { exportToCurl } from '../utils/exporter';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,8 @@ export const HeadersTab: React.FC = () => {
   const [toast, setToast]   = useState<{ ok: boolean; msg: string } | null>(null);
   const toastTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mode, activeDomain } = useScope();
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef                    = useRef<HTMLDivElement>(null);
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -202,6 +205,15 @@ export const HeadersTab: React.FC = () => {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [exportOpen]);
 
   // ── Toast helper ──────────────────────────────────────────────────────────────
   const showToast = (ok: boolean, msg: string) => {
@@ -276,6 +288,19 @@ export const HeadersTab: React.FC = () => {
       const res = await chrome.runtime.sendMessage({ type: 'DELETE_HEADER_RULE', payload: id });
       if (res?.success) await load();
     } catch { /* silent */ }
+  };
+
+  // ── Export ──────────────────────────────────────────────────────────────────
+  const handleExportCurl = async () => {
+    setExportOpen(false);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const url = tab?.url ?? 'https://example.com';
+      await navigator.clipboard.writeText(exportToCurl(url, [], rules));
+      showToast(true, 'Copied to clipboard!');
+    } catch {
+      showToast(false, 'Failed to copy to clipboard.');
+    }
   };
 
   return (
@@ -360,7 +385,30 @@ export const HeadersTab: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Rule list ─────────────────────────────────────────────────────── */}
+      {/* ── Rule list ─────────────────────────────────────────────────────── */}      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 bg-gray-900/20 shrink-0">
+        <span className="text-[10px] text-gray-600 uppercase tracking-widest font-medium select-none">
+          {rules.length > 0 ? `Rules (${rules.length})` : 'Rules'}
+        </span>
+        <div ref={exportRef} className="relative">
+          <button
+            onClick={() => setExportOpen(p => !p)}
+            disabled={rules.length === 0}
+            className="px-2 py-1 text-[11px] text-gray-500 hover:text-blue-400 hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+          >
+            Export
+          </button>
+          {exportOpen && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 overflow-hidden">
+              <button
+                onClick={() => { void handleExportCurl(); }}
+                className="w-full text-left px-3 py-2 text-[11px] text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors"
+              >
+                Copy as cURL
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
       <div className="flex-1 overflow-y-auto">
         {rules.length === 0 ? (
           <div className="flex items-center justify-center h-20 text-gray-700 text-[11px] text-center px-6 select-none">
