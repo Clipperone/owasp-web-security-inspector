@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Vite build output (load unpacked from here in Chrome)
+dist/
+
+# Vite cache
+.vite/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local

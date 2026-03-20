@@ -1,0 +1,4 @@
+/* Tailwind CSS directives — must be the only content in this file */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
