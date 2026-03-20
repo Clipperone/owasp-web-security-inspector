@@ -26,6 +26,8 @@
     }
   },
 
+  "devtools_page": "src/devtools/devtools.html",
+
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
