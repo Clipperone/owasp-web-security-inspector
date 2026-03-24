@@ -61,6 +61,7 @@ function toFormState(rule: HeaderRule): FormState {
 
 interface Template {
   label:     string;
+  urlFilter?: string;
   header:    string;
   value:     string;
   operation: HeaderOperation;
@@ -77,6 +78,7 @@ const TEMPLATES: Template[] = [
   },
   {
     label:     'CORS Bypass',
+    urlFilter: '*://*/*',
     header:    'Access-Control-Allow-Origin',
     value:     '*',
     operation: 'set',
@@ -406,6 +408,7 @@ export const HeadersTab: React.FC = () => {
   const applyTemplate = (tpl: Template) => {
     setForm(prev => ({
       ...prev,
+      urlFilter: tpl.urlFilter ?? prev.urlFilter,
       header:    tpl.header,
       value:     tpl.value,
       operation: tpl.operation,

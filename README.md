@@ -113,19 +113,19 @@ When a cookie value is a JWT, a sky-blue **`JWT`** badge appears in the Flags co
 #### Inject a Bearer token into every API request
 
 1. Open the extension on any page that calls your API.
-2. Click **+** to open the rule form, or use **Templates ▾ → Bearer Token** to pre-fill it.
+2. Use the rule form at the top of the tab, or choose **Templates ▾ → Bearer Token** to pre-fill it.
 3. Set:
    - **URL filter**: `*api.example.com/*`
    - **Operation**: `set`
    - **Header**: `Authorization`
    - **Value**: `Bearer <your-token>`
-   - **Type**: Request
+  - **Target**: `Request`
 4. Click **Add rule**. Every request matching the pattern now carries the header — no code change required.
 
 #### Bypass CORS errors during local development
 
 1. Click **Templates ▾ → CORS Bypass**.
-2. The form pre-fills `Access-Control-Allow-Origin: *` as a **response** header on `<all_urls>`.
+2. The form pre-fills `Access-Control-Allow-Origin: *` as a **response** header on `*://*/*`.
 3. Restrict the rule to your dev server only: set the URL filter to `*localhost*` and choose **Scoped domain** in the form.
 4. Save — browser CORS checks now pass for responses from localhost.
 
@@ -134,7 +134,7 @@ When a cookie value is a JWT, a sky-blue **`JWT`** badge appears in the Flags co
 1. Fill in the rule form manually:
    - **Header**: `X-Frame-Options`
    - **Operation**: `remove`
-   - **Type**: Response
+  - **Target**: `Response`
 2. Save. The header is stripped from every matching response, allowing the page to be embedded in an iframe.
 
 #### Reorder and toggle rules
