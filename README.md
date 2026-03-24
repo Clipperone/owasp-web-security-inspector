@@ -1,44 +1,81 @@
-# Cookie / Token / Header Editor
+# OWASP Web Security Inspector
 
-Chrome extension for inspecting cookies, JWTs, and HTTP headers locally in the browser.
+OWASP Web Security Inspector is a Chrome extension for browser-side inspection, editing, and security assessment of cookies, JWTs, storage tokens, and HTTP headers.
 
-## What It Does
+The project started as a developer-oriented editor and inspector. It now also includes an assessment workflow oriented to OWASP-inspired browser-observable review and secure-by-default best practices for session handling, token storage, `Set-Cookie` delivery, browser hardening headers, caching, and cross-origin behavior.
 
-- Inspect, create, edit, delete, and export cookies for the active page.
-- Decode JWTs from manual input or values found in cookies, `localStorage`, and `sessionStorage`.
-- Create request and response header rules with Chrome `declarativeNetRequest`.
-- Inspect recent response headers for the active tab and surface OWASP-oriented warnings.
+Its findings are intended to help reviewers compare what an application exposes in the browser against OWASP guidance, especially from the OWASP Cheat Sheet Series and the broader OWASP Top 10 awareness model.
 
-## Main Features
+## What This Extension Is For
+
+Use it when you want to review what the browser can actually observe and store during an application flow:
+
+- cookies and session-related attributes
+- tokens and JWTs found in cookies or web storage
+- response headers captured from the active tab context
+- request and response header overrides for debugging
+- an aggregated assessment report that can be exported for QA or release review
+
+The focus is practical browser-side verification of common OWASP-aligned best practices, such as:
+
+- `Secure`, `HttpOnly`, `SameSite`, `Domain`, `Path`, and cookie lifetime choices
+- use of non-persistent session cookies where appropriate
+- avoiding risky token storage patterns in `localStorage` and `sessionStorage`
+- security header posture such as CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, COOP, COEP, CORP, and Permissions-Policy
+- logout-related cleanup signals such as `Cache-Control: no-store` and `Clear-Site-Data`
+- conservative CORS behavior for browser-consumed responses
+
+## What It Does Not Prove
+
+This extension is intentionally browser-side only. It helps surface useful findings and best-practice gaps, but it does not prove full application security or compliance.
+
+It does not verify, for example:
+
+- token revocation or session invalidation on the backend
+- JWT signature trust unless the payload is inspected structurally only
+- secret strength or key management quality
+- session rotation correctness on the server
+- full formal compliance with OWASP ASVS or other standards
+
+## Main Capabilities
+
+### Assessment
+
+- Aggregated browser-side findings across cookies, observed `Set-Cookie`, tokens, storage, and response headers.
+- Severity-based review with category, group, and actionable-only filters.
+- Export of the current assessment view in Markdown or JSON.
+- Summary blocks for cookie posture, observed `Set-Cookie`, and token origins.
+- Heuristics designed to reflect common OWASP-oriented best practices rather than project-specific opinions.
 
 ### Cookies
 
-- Inline create and edit flow.
+- Inspect, create, edit, delete, and export cookies for the active page.
 - Validation for `SameSite=None`, `__Secure-*`, `__Host-*`, and partitioned cookies.
 - Export as `curl` or Netscape `cookies.txt`.
 - One-click jump from cookie JWT values to the Tokens tab.
-
-### Modify Headers
-
-- Request and response rule editing.
-- Inline update, enable/disable, delete, and drag-and-drop reorder.
-- Per-rule scope with `Global scope` or `Scoped domain`.
-- Quick templates for common cases such as bearer auth and CORS debugging.
-- Export enabled request-side rules as `curl -H` arguments.
 
 ### Tokens
 
 - Real-time JWT decode.
 - Expiration indicators for `exp`.
 - Storage scan and manual rescan of the active tab.
+- Manual token risk preview for JWT input.
 
-### Response Headers
+### Headers
 
-- Captures `DOC`, `IFR`, and `XHR` responses.
+- Request and response header rule editing via Chrome `declarativeNetRequest`.
+- Inline update, enable/disable, delete, and drag-and-drop reorder.
+- Per-rule scope with `Global scope` or `Scoped domain`.
+- Quick templates for common cases such as bearer auth and CORS debugging.
+- Export enabled request-side rules as `curl -H` arguments.
+
+### Response Inspection
+
+- Capture of `DOC`, `IFR`, and `XHR` responses observed from the active tab.
 - Security summary for the primary response.
 - Missing vs weak OWASP-relevant header checks.
 
-## Stack
+## Runtime And Stack
 
 - Chrome Extension Manifest V3
 - React 18
@@ -52,10 +89,18 @@ Chrome extension for inspecting cookies, JWTs, and HTTP headers locally in the b
 - npm 10+
 - Chrome 109+
 
-## Development
+## Development Workflow
+
+Install dependencies:
 
 ```bash
 npm install
+```
+
+Recommended local validation sequence:
+
+```bash
+npm run test
 npm run lint
 npm run eslint
 npm run build
@@ -68,7 +113,7 @@ npm run dev
 npm run generate-icons
 ```
 
-Load the extension from `dist/` in `chrome://extensions` with Developer mode enabled.
+Load the unpacked extension from `dist/` in `chrome://extensions` with Developer mode enabled.
 
 ## Release Flow
 
@@ -115,24 +160,54 @@ git push --follow-tags
 manifest.json
 package.json
 package-lock.json
+README.md
+roadmap.md
+public/
+  icons/
 scripts/
   generate-icons.mjs
   release.mjs
 src/
   background/
+    index.ts
   content/
+    index.ts
   popup/
+    App.tsx
+    AssessmentTab.tsx
     CookieEditorForm.tsx
     CookieTab.tsx
     CurrentHeadersTab.tsx
     HeaderRuleRow.tsx
     HeadersTab.tsx
+    index.css
+    index.html
+    main.tsx
     Popup.tsx
     TokensTab.tsx
     useDismissOnOutsideClick.ts
   types/
+    index.ts
   utils/
+    assessment.test.ts
+    assessment.ts
+    cookieUtils.ts
+    exporter.ts
+    headerUtils.ts
+    index.ts
+    jwtUtils.test.ts
+    jwtUtils.ts
+    storageUtils.ts
 ```
+
+## Architectural Notes
+
+- `src/background/index.ts`: background service worker for message routing, cached request/header data, and DNR rule coordination.
+- `src/content/index.ts`: storage scan logic executed in the page context.
+- `src/popup/`: popup UI, including cookies, headers, tokens, response inspection, and the Assessment tab.
+- `src/utils/assessment.ts`: pure assessment logic for cookies, `Set-Cookie`, headers, and token heuristics.
+- `src/utils/jwtUtils.ts`: local JWT parsing and structural validation helpers.
+- `src/utils/*.test.ts`: pure-module unit tests executed with Vitest.
 
 ## Permissions
 
@@ -146,4 +221,21 @@ src/
 ## Privacy
 
 - All processing stays in the browser.
-- No backend or external API is used for token decoding or rule handling.
+- No backend or external API is used for token decoding, assessment logic, or rule handling.
+
+## OWASP References
+
+The assessment logic and product positioning are informed by OWASP documentation and related best-practice material. Useful starting points:
+
+- OWASP Cheat Sheet Series: https://cheatsheetseries.owasp.org/
+- OWASP Top 10: https://owasp.org/Top10/2025/
+- OWASP Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
+- OWASP HTTP Security Response Headers Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
+- OWASP REST Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
+- OWASP Content Security Policy Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html
+- OWASP HTTP Strict Transport Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html
+- OWASP Cross-Site Request Forgery Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+- OWASP Cross Site Scripting Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+- OWASP OAuth2 Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html
+
+These references should be treated as the primary guidance for interpreting findings and deciding whether an observed browser-side configuration is aligned with current OWASP best practices.

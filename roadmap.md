@@ -313,6 +313,11 @@ Rendere il plugin utile anche fuori dalla singola sessione del popup.
 
 ## Fase 7 - Libreria Remediation e UX di Prodotto
 
+### Stato
+
+- completata la parte tecnica della fase 7
+- resta consigliata la verifica manuale della leggibilità su popup reale con molti finding e filtri combinati
+
 ### Obiettivo
 
 Migliorare il valore percepito del tool rendendo i finding più utili e più leggibili.
@@ -342,7 +347,20 @@ Migliorare il valore percepito del tool rendendo i finding più utili e più leg
 - UX più professionale
 - migliore aderenza al posizionamento del prodotto
 
+### Risultato
+
+- finding resi più coerenti nella UI e nel report con template `Problem`, `Impact`, `Evidence`, `Remediation`
+- badge e gruppi introdotti per `Auth/Session`, `CSRF`, `Browser Hardening`, `Disclosure`, `Token Handling`
+- filtri aggiunti per categoria, gruppo e `Actionable only`, mantenendo il filtro per severità già esistente
+- copy della tab `Assessment` reso più esplicitamente orientato a security assessment browser-side e non a compliance totale
+- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
+
 ## Fase 8 - Refactor e Test
+
+### Stato
+
+- completata la parte tecnica della fase 8
+- le fixture introdotte sono sintetiche ma coprono i casi principali del motore di assessment senza dipendere dalla UI
 
 ### Obiettivo
 
@@ -368,6 +386,13 @@ Rendere il motore di assessment affidabile, testabile e facile da estendere.
 
 - assessment più stabile
 - minore rischio di regressioni e falsi positivi
+
+### Risultato
+
+- aggiunto `vitest` con script `npm run test` per eseguire unit test sui moduli puri
+- coperti con test `src/utils/jwtUtils.ts` e `src/utils/assessment.ts`
+- verificati classificazione cookie sensibili/CSRF, parsing `Set-Cookie`, finding su header e token, ordinamento per severità e rilevamento di claim JWT sensibili
+- validazione eseguita con `npm run test`, `npm run eslint`, `npm run lint`, `npm run build`
 
 ## Fase 9 - Documentazione e Posizionamento Release
 

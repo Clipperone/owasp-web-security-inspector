@@ -1,101 +1,103 @@
 # Copilot Agent Instructions
 
-Trust these instructions. Only search the codebase if information here is incomplete or appears incorrect.
+Trust these instructions. Only search the codebase if this file is incomplete or wrong.
 
-## What This Repository Does
+## Repository Summary
 
-**Cookie / Token / Header Editor** is a Chrome Extension (Manifest V3) that lets developers inspect and manipulate cookies, JWT tokens, and HTTP request/response headers on any page. It runs fully locally — no backend, no external API calls for data processing.
+**OWASP Web Security Inspector** is a small single-package Chrome extension built with Manifest V3, React, TypeScript, Vite, and Tailwind. It inspects and assesses cookies, JWTs, storage tokens, `Set-Cookie` responses, and browser-visible HTTP security headers. All logic is local; there is no backend and no external API for decoding or assessment.
 
-## Runtime & Tool Versions
+Validated environment here: Node.js 24.x, npm 11.x. README targets Node.js 20+ and npm 10+.
 
-| Tool | Version |
-|------|---------|
-| Node.js | 24.x |
-| npm | 11.x |
-| TypeScript | 5.x (`"strict": true`) |
-| Vite | 5.x |
-| React | 18.x |
-| Tailwind CSS | 3.x |
+## Build, Test, Run, Validate
 
-## Build & Validation — Complete Command Sequence
+Always run `npm install` before any npm script if `node_modules/` is missing or `package.json` changed. Without dependencies, Vite commands fail.
 
-**Always run `npm install` before any build command** if `node_modules/` is absent. Omitting this step causes a hard `"vite is not recognized"` failure.
+Working command order validated in this repo:
 
 ```bash
-# 1. Install dependencies (required once, and after any package.json change)
 npm install
-
-# 2. Type-check only — no output means zero errors (exit 0)
-npm run lint          # runs: tsc --noEmit
-
-# 3. Production build — output goes to dist/
-npm run build         # runs: vite build
-# Expected: "42 modules transformed", "built in ~7s", exit 0
-
-# 4. Development watch mode (rebuilds on save)
-npm run dev           # runs: vite build --watch
+npm run test
+npm run lint
+npm run eslint
+npm run build
 ```
 
-The **canonical validation sequence** before committing is: `npm run lint` (must produce no output) then `npm run build` (must succeed). There are no automated tests. There is no CI pipeline yet — validation is purely local.
+What each command does and what was verified:
 
-`dist/` is generated output and is git-ignored. Never commit it.
+- `npm run test`
+  Runs `vitest run`. This currently passes with 2 test files / 7 tests. It emits Vite/CRX deprecation warnings about `esbuild` and `rolldownOptions`, but the command succeeds.
+- `npm run lint`
+  Runs `tsc --noEmit`. Success is silent.
+- `npm run eslint`
+  Runs `eslint .`. Success is silent.
+- `npm run build`
+  Runs `vite build` and writes `dist/`. Validated successfully; current build completes in about 5 seconds and produces the unpacked extension.
+- `npm run dev`
+  Runs `vite build --watch`. This is a watch rebuild, not a dev server. It stays running until stopped.
 
-## Architecture
+Postcondition for manual testing: load `dist/` as an unpacked extension in `chrome://extensions` with Developer mode enabled.
 
-```
-src/
-  types/index.ts          ← ALL shared TypeScript interfaces and enums (single source of truth)
-  utils/
-    jwtUtils.ts           ← JWT decode (Base64Url, pure TS, no libs). Exports: isJwt(), decodeJwt(), formatExpiry()
-    storageUtils.ts       ← Typed chrome.storage.local wrapper. Exports: getRules(), saveRule(), deleteRule(), toggleRule(), nextRuleId(), getSettings(), updateSettings(), resetStorage()
-    cookieUtils.ts        ← Stub (export {} only)
-    headerUtils.ts        ← Stub (export {} only)
-    index.ts              ← Barrel re-exporting all 4 utils
-  background/index.ts     ← MV3 service worker. Handles onInstalled, updateNetworkRules(), and all MessageType cases
-  content/index.ts        ← Injected into all pages. Scans localStorage/sessionStorage via requestIdleCallback, sends STORAGE_SCAN_RESULT message
-  popup/
-    main.tsx              ← ReactDOM.createRoot entry point
-    App.tsx               ← Thin wrapper: renders <Popup />
-    Popup.tsx             ← Tab shell (Cookies | Headers | Tokens), manages activeTab state
-    CookieTab.tsx         ← Full cookie CRUD using chrome.cookies API directly
-    HeadersTab.tsx        ← DNR rule editor; communicates with background via chrome.runtime.sendMessage
-    TokensTab.tsx         ← JWT decoder; fetches storage scan via GET_STORAGE_TOKENS message
-manifest.json             ← Manifest V3 source — @crxjs/vite-plugin reads this directly
-vite.config.ts            ← Uses @crxjs/vite-plugin; output is dist/
-tsconfig.json             ← Strict mode, bundler moduleResolution, noEmit: true, jsx: react-jsx
-tailwind.config.js        ← darkMode: 'class', content glob: './src/**/*.{ts,tsx,html}'
-postcss.config.js         ← tailwindcss + autoprefixer
-scripts/generate-icons.mjs ← Run once with `node scripts/generate-icons.mjs` to regenerate placeholder PNGs in public/icons/
-```
+Other scripted steps:
 
-## Critical Architecture Rules
+- `node scripts/release.mjs patch --dry-run`
+  Fails on a dirty working tree by design: `Working tree is not clean...`.
+- `node scripts/release.mjs patch --dry-run --allow-dirty`
+  Works and re-runs `npm run lint`, `npm run eslint`, and `npm run build` before reporting the next version/tag.
+- `npm run release:patch|minor|major`
+  Real release flow. It edits `package.json`, `package-lock.json`, and `manifest.json`, commits, and tags. Do not run unless explicitly asked.
+- `npm run generate-icons`
+  Mutates files under `public/icons`. The script currently writes `icon16.png`-style names, while the manifest uses `16px.png`-style names. Do not assume it refreshes the icons actually referenced by the extension without checking filenames first.
 
-1. **Manifest V3 only** — Use `chrome.declarativeNetRequest` (DNR) for all header manipulation. Never use blocking `chrome.webRequest`.
-2. **Local only** — JWT decoding uses native `atob()` + `decodeURIComponent`. Never install `jsonwebtoken`, `jwt-decode`, or any JWT library.
-3. **Silent background errors** — All `catch` blocks in `src/background/index.ts` must swallow errors silently. No `console.log` in background scripts.
-4. **No barrel import in background** — `src/background/index.ts` imports directly from `'../utils/storageUtils'` (not from `'../utils'`) to avoid an IDE resolution bug.
-5. **DNR enum** — Use `chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS` (enum value), never the string literal `'modifyHeaders'`.
-6. **Cookie API type** — Use `chrome.cookies.Details` (not `chrome.cookies.CookieDetails`).
-7. **`"type": "module"`** in `package.json` — required; removing it causes CJS warnings.
-8. **All UI styled with Tailwind CSS** — No inline `style=` props, no CSS modules.
+There are no `.github/workflows` files and no remote CI definition in the repo. Pre-checkin validation is local.
 
-## Key Types (src/types/index.ts)
+## Project Layout
 
-- `HeaderRule` — persisted DNR rule (id, priority, name, enabled, urlFilter, requestHeaders?, responseHeaders?, createdAt, updatedAt)
-- `HeaderModification` — `{ header, operation: 'append'|'set'|'remove', value? }`
-- `MessageType` — union of all 11 message strings handled by the background router
-- `StorageScanResult` / `StorageEntry` — content script scan payload
-- `STORAGE_KEYS` — const object with keys `HEADER_RULES`, `COOKIE_OVERRIDES`, `SETTINGS`
-- `DEFAULT_SETTINGS` — default `ExtensionSettings` value
+Top-level files that matter most:
 
-## Common TypeScript Pitfalls
+- `manifest.json`: MV3 source manifest read directly by `@crxjs/vite-plugin`.
+- `package.json`: all scripts and dependency versions.
+- `vite.config.ts`: React + CRX plugin, sourcemaps enabled in builds.
+- `tsconfig.json`: strict TypeScript, `noUnusedLocals`, `noUnusedParameters`, bundler module resolution.
+- `eslint.config.js`: flat ESLint config for TS/React Hooks and Node-side scripts.
+- `tailwind.config.js` and `postcss.config.js`: Tailwind setup.
+- `README.md`: user-facing product description and release workflow.
+- `roadmap.md`: implementation history and expected validation sequence after feature work.
 
-- `"noUnusedLocals": true` and `"noUnusedParameters": true` are enforced — every import and parameter must be used.
-- When a React component imports `React` only for `React.FC`, the import is used and required.
-- The `exhaustive never` pattern is used in the background message router `default` branch — adding a new `MessageType` requires adding a matching `case`.
-- `chrome.cookies.SameSiteStatus` = `"unspecified" | "no_restriction" | "lax" | "strict"`.
-- `expirationDate` in `chrome.cookies` is Unix timestamp in **seconds**.
+Important source directories:
 
-## .gitignore Summary
+- `src/background/index.ts`
+  MV3 service worker. Owns install/update lifecycle, dynamic declarativeNetRequest rule sync, response-header cache, and the popup/content message router.
+- `src/content/index.ts`
+  Content script injected on all pages. Scans `localStorage` and `sessionStorage` via `requestIdleCallback` and reports findings back to background.
+- `src/popup/`
+  React popup UI. `Popup.tsx` is the tab shell. Main tabs are `AssessmentTab.tsx`, `CookieTab.tsx`, `CurrentHeadersTab.tsx`, `HeadersTab.tsx`, and `TokensTab.tsx`.
+- `src/types/index.ts`
+  Shared source of truth for message contracts, assessment models, header rules, token/storage types, and extension settings.
+- `src/utils/assessment.ts`
+  Pure browser-side assessment engine for cookies, `Set-Cookie`, headers, and tokens.
+- `src/utils/storageUtils.ts`
+  Typed wrapper around `chrome.storage.local` for rules/settings.
+- `src/utils/jwtUtils.ts`
+  Local JWT detection/decoding. No external JWT library is used.
+- `src/utils/exporter.ts`
+  Cookie export and curl export helpers.
+- `src/utils/*.test.ts`
+  Vitest tests for the pure utility modules only; there are no browser E2E tests.
 
-Ignored: `node_modules/`, `dist/`, `.vite/`, `*.tsbuildinfo`, `.vscode/`, `.idea/`, `.DS_Store`, `Thumbs.db`, `.env*`
+## Architecture Rules That Matter
+
+1. Manifest V3 only. Use `chrome.declarativeNetRequest` for header modification. Do not add blocking `chrome.webRequest` mutation logic.
+2. Keep JWT handling local and dependency-free. Do not add `jsonwebtoken`, `jwt-decode`, or similar libraries.
+3. Background script errors are intentionally swallowed in catch blocks. Do not add noisy logging there.
+4. In `src/background/index.ts`, keep importing `storageUtils` directly from `../utils/storageUtils`, not the barrel.
+5. Use `chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS`, not the string `'modifyHeaders'`.
+6. All popup styling is Tailwind-based; `src/popup/index.css` only contains Tailwind directives. Do not introduce CSS modules or inline styles unless the project style changes.
+7. TypeScript is strict. Unused imports, locals, or parameters fail validation.
+8. `chrome.cookies` timestamps are in seconds, and `chrome.cookies.SameSiteStatus` uses Chrome's string union values.
+
+## Practical Guidance For Changes
+
+- If you touch popup behavior or copy, run at least `npm run lint`, `npm run eslint`, and `npm run build`.
+- If you touch `src/utils/assessment.ts` or `src/utils/jwtUtils.ts`, run `npm run test` too.
+- `dist/` is generated output and git-ignored. Do not commit it.
+- The repo root is small; when searching, prefer the files above before broad codebase exploration.

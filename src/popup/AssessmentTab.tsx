@@ -11,6 +11,8 @@ import type {
 } from '../types';
 import { buildAssessmentFindings, getCookieAssessmentSummary, getFindingCounts, getSetCookieAssessmentSummary, getTokenAssessmentSummary } from '../utils/assessment';
 
+type FindingGroup = 'auth/session' | 'csrf' | 'browser hardening' | 'disclosure' | 'token handling' | 'general review';
+
 const CATEGORY_LABELS: Record<AssessmentCategory, string> = {
   cookies: 'Cookies',
   tokens: 'Tokens',
@@ -30,6 +32,15 @@ const TOKEN_ORIGIN_LABELS: Record<TokenAssessmentOrigin, string> = {
   localStorage: 'localStorage',
   sessionStorage: 'sessionStorage',
   manual: 'Manual',
+};
+
+const FINDING_GROUP_LABELS: Record<FindingGroup, string> = {
+  'auth/session': 'Auth/Session',
+  csrf: 'CSRF',
+  'browser hardening': 'Browser Hardening',
+  disclosure: 'Disclosure',
+  'token handling': 'Token Handling',
+  'general review': 'General Review',
 };
 
 function severityClasses(severity: AssessmentFinding['severity']): string {
@@ -58,6 +69,57 @@ function categoryClasses(category: AssessmentCategory): string {
   }
 }
 
+function groupClasses(group: FindingGroup): string {
+  switch (group) {
+    case 'auth/session':
+      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
+    case 'csrf':
+      return 'text-rose-300 bg-rose-950/40 border-rose-900/60';
+    case 'browser hardening':
+      return 'text-cyan-300 bg-cyan-950/40 border-cyan-900/60';
+    case 'disclosure':
+      return 'text-orange-300 bg-orange-950/40 border-orange-900/60';
+    case 'token handling':
+      return 'text-emerald-300 bg-emerald-950/40 border-emerald-900/60';
+    case 'general review':
+      return 'text-gray-300 bg-gray-900/60 border-gray-700';
+  }
+}
+
+function findingGroup(finding: AssessmentFinding): FindingGroup {
+  const title = finding.title.toLowerCase();
+  const summary = finding.summary.toLowerCase();
+  if (title.includes('csrf') || summary.includes('csrf')) return 'csrf';
+  if (title.includes('server header') || title.includes('x-powered-by') || title.includes('discloses')) return 'disclosure';
+  if (finding.category === 'headers') return 'browser hardening';
+  if (finding.category === 'tokens' || finding.category === 'storage') return 'token handling';
+  if (finding.category === 'cookies') return 'auth/session';
+  return 'general review';
+}
+
+function isActionableFinding(finding: AssessmentFinding): boolean {
+  return finding.severity !== 'info';
+}
+
+function findingImpact(finding: AssessmentFinding): string {
+  if (finding.whyItMatters) return finding.whyItMatters;
+
+  switch (findingGroup(finding)) {
+    case 'auth/session':
+      return 'This can weaken browser-visible session protections or make authentication state easier to steal, replay, or misuse.';
+    case 'csrf':
+      return 'This can make cross-site request flows harder to reason about and can weaken CSRF defenses visible from the browser.';
+    case 'browser hardening':
+      return 'This can reduce built-in browser protections against injection, framing abuse, unsafe embedding, or risky cross-origin behavior.';
+    case 'disclosure':
+      return 'This increases reconnaissance value by exposing implementation details that help attackers fingerprint the application stack.';
+    case 'token handling':
+      return 'This increases the exposure window or misuse risk for tokens handled inside the browser context.';
+    case 'general review':
+      return 'This is worth reviewing because it changes how the browser observes, stores, or protects application security state.';
+  }
+}
+
 export const AssessmentTab: React.FC = () => {
   const [tabInfo, setTabInfo] = useState<ActiveTabInfo | null>(null);
   const [cookies, setCookies] = useState<chrome.cookies.Cookie[]>([]);
@@ -66,6 +128,9 @@ export const AssessmentTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<AssessmentFinding['severity'] | 'all'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<AssessmentCategory | 'all'>('all');
+  const [groupFilter, setGroupFilter] = useState<FindingGroup | 'all'>('all');
+  const [actionableOnly, setActionableOnly] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -131,9 +196,14 @@ export const AssessmentTab: React.FC = () => {
   const sessionAuthCookieCount = cookieSummary.counts['session/auth'];
   const csrfCookieCount = cookieSummary.counts.csrf;
   const visibleFindings = useMemo(() => {
-    if (filter === 'all') return findings;
-    return findings.filter(finding => finding.severity === filter);
-  }, [filter, findings]);
+    return findings.filter(finding => {
+      if (filter !== 'all' && finding.severity !== filter) return false;
+      if (categoryFilter !== 'all' && finding.category !== categoryFilter) return false;
+      if (groupFilter !== 'all' && findingGroup(finding) !== groupFilter) return false;
+      if (actionableOnly && !isActionableFinding(finding)) return false;
+      return true;
+    });
+  }, [actionableOnly, categoryFilter, filter, findings, groupFilter]);
 
   const visibleCounts = useMemo(() => getFindingCounts(visibleFindings), [visibleFindings]);
 
@@ -153,7 +223,10 @@ export const AssessmentTab: React.FC = () => {
       `Opaque token candidates: ${tokenSummary.opaqueCount}`,
       `Storage entries observed: ${scanResult?.entries.length ?? 0}`,
       `Captured requests: ${requests.length}`,
-      `Applied filter: ${filter}`,
+      `Severity filter: ${filter}`,
+      `Category filter: ${categoryFilter}`,
+      `Group filter: ${groupFilter}`,
+      `Actionable only: ${actionableOnly ? 'yes' : 'no'}`,
       '',
       '## Severity Summary',
       '',
@@ -172,10 +245,10 @@ export const AssessmentTab: React.FC = () => {
       visibleFindings.forEach((finding, index) => {
         lines.push(`${index + 1}. [${finding.severity.toUpperCase()}] ${finding.title}`);
         lines.push(`Category: ${CATEGORY_LABELS[finding.category]}`);
-        lines.push(`Summary: ${finding.summary}`);
-        if (finding.whyItMatters) {
-          lines.push(`Why it matters: ${finding.whyItMatters}`);
-        }
+        lines.push(`Group: ${FINDING_GROUP_LABELS[findingGroup(finding)]}`);
+        lines.push(`Actionable: ${isActionableFinding(finding) ? 'yes' : 'no'}`);
+        lines.push(`Problem: ${finding.summary}`);
+        lines.push(`Impact: ${findingImpact(finding)}`);
         lines.push(`Evidence: ${finding.evidence}`);
         lines.push(`Remediation: ${finding.remediation}`);
         lines.push('');
@@ -183,7 +256,7 @@ export const AssessmentTab: React.FC = () => {
     }
 
     return lines.join('\n');
-  }, [cookies.length, csrfCookieCount, filter, requests.length, scanResult?.entries.length, sessionAuthCookieCount, setCookieSummary.observedCount, setCookieSummary.relevantRequestCount, tabInfo?.url, tokenSummary.jwtCount, tokenSummary.observedCount, tokenSummary.opaqueCount, visibleCounts.high, visibleCounts.info, visibleCounts.low, visibleCounts.medium, visibleFindings]);
+  }, [actionableOnly, categoryFilter, cookies.length, csrfCookieCount, filter, groupFilter, requests.length, scanResult?.entries.length, sessionAuthCookieCount, setCookieSummary.observedCount, setCookieSummary.relevantRequestCount, tabInfo?.url, tokenSummary.jwtCount, tokenSummary.observedCount, tokenSummary.opaqueCount, visibleCounts.high, visibleCounts.info, visibleCounts.low, visibleCounts.medium, visibleFindings]);
 
   const copyReport = useCallback(async (format: 'markdown' | 'json') => {
     const payload = format === 'markdown'
@@ -193,6 +266,9 @@ export const AssessmentTab: React.FC = () => {
           filter,
           tab: tabInfo,
           counts: visibleCounts,
+          categoryFilter,
+          groupFilter,
+          actionableOnly,
           findings: visibleFindings,
         }, null, 2);
 
@@ -204,14 +280,14 @@ export const AssessmentTab: React.FC = () => {
       setCopyToast('Clipboard copy failed.');
       window.setTimeout(() => setCopyToast(null), 2200);
     }
-  }, [filter, markdownReport, tabInfo, visibleCounts, visibleFindings]);
+  }, [actionableOnly, categoryFilter, filter, groupFilter, markdownReport, tabInfo, visibleCounts, visibleFindings]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 bg-gray-900/30 shrink-0">
         <div className="flex-1 min-w-0">
           <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
-            OWASP-focused assessment
+            Browser security assessment
           </p>
           <p className="text-[11px] text-gray-400 font-mono truncate" title={tabInfo?.url ?? ''}>
             {tabInfo?.url ?? 'Loading active tab...'}
@@ -263,13 +339,78 @@ export const AssessmentTab: React.FC = () => {
       </div>
 
       <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
+          <span className="text-gray-400">Focused on browser-observable security signals. This is not a compliance certification.</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => setActionableOnly(current => !current)}
+            className={`px-2 py-1 text-[10px] border rounded transition-colors ${actionableOnly ? 'bg-emerald-950/30 border-emerald-900/50 text-emerald-300' : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
+          >
+            Actionable only
+          </button>
+          <button
+            onClick={() => {
+              setFilter('all');
+              setCategoryFilter('all');
+              setGroupFilter('all');
+              setActionableOnly(false);
+            }}
+            className="px-2 py-1 text-[10px] border rounded transition-colors bg-gray-900/60 border-gray-700 text-gray-400 hover:text-gray-200"
+          >
+            Reset filters
+          </button>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Category</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setCategoryFilter('all')}
+              className={`px-2 py-1 text-[10px] border rounded transition-colors ${categoryFilter === 'all' ? 'bg-gray-200 text-gray-950 border-gray-200' : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
+            >
+              All
+            </button>
+            {(Object.keys(CATEGORY_LABELS) as AssessmentCategory[]).map(category => (
+              <button
+                key={category}
+                onClick={() => setCategoryFilter(current => current === category ? 'all' : category)}
+                className={`px-2 py-1 text-[10px] border rounded transition-colors ${categoryFilter === category ? categoryClasses(category) : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
+              >
+                {CATEGORY_LABELS[category]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Group</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setGroupFilter('all')}
+              className={`px-2 py-1 text-[10px] border rounded transition-colors ${groupFilter === 'all' ? 'bg-gray-200 text-gray-950 border-gray-200' : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
+            >
+              All
+            </button>
+            {(Object.keys(FINDING_GROUP_LABELS) as FindingGroup[]).map(group => (
+              <button
+                key={group}
+                onClick={() => setGroupFilter(current => current === group ? 'all' : group)}
+                className={`px-2 py-1 text-[10px] border rounded transition-colors ${groupFilter === group ? groupClasses(group) : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
+              >
+                {FINDING_GROUP_LABELS[group]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
               Cookie summary
             </p>
             <p className="text-[11px] text-gray-400">
-              Automatic classification of the currently observed cookie jar.
+              Automatic classification of the currently observed cookie state.
             </p>
           </div>
           <span className="text-[10px] text-gray-600">
@@ -363,7 +504,7 @@ export const AssessmentTab: React.FC = () => {
               Token summary
             </p>
             <p className="text-[11px] text-gray-400">
-              Browser-observed token and JWT candidates by origin. Manual token input is evaluated separately in the Tokens tab.
+              Browser-observed token and JWT candidates by origin. Manual token input is assessed separately in the Tokens tab.
             </p>
           </div>
           <span className="text-[10px] text-gray-600">
@@ -406,7 +547,7 @@ export const AssessmentTab: React.FC = () => {
           <div className="p-4 space-y-2 text-[11px]">
             <p className="text-emerald-400 font-semibold">No findings in the current filter.</p>
             <p className="text-gray-500">
-              This does not prove compliance. It means the extension did not observe cookie, token, or header issues from the current browser-visible context.
+              This does not prove compliance. It means the extension did not observe matching issues in the current browser-visible context and active filters.
             </p>
           </div>
         ) : (
@@ -420,15 +561,22 @@ export const AssessmentTab: React.FC = () => {
                   <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${categoryClasses(finding.category)}`}>
                     {CATEGORY_LABELS[finding.category]}
                   </span>
+                  <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${groupClasses(findingGroup(finding))}`}>
+                    {FINDING_GROUP_LABELS[findingGroup(finding)]}
+                  </span>
+                  <span className="px-1.5 py-px text-[9px] font-bold border rounded bg-gray-900/60 border-gray-700 text-gray-300">
+                    {isActionableFinding(finding) ? 'ACTIONABLE' : 'REVIEW'}
+                  </span>
                   <h3 className="text-[12px] text-gray-100 font-semibold">{finding.title}</h3>
                 </div>
-                <p className="text-[11px] text-gray-400 leading-relaxed">{finding.summary}</p>
-                {finding.category === 'headers' && finding.whyItMatters && (
-                  <div>
-                    <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Why it matters</p>
-                    <p className="text-[11px] text-gray-300 leading-relaxed">{finding.whyItMatters}</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Problem</p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">{finding.summary}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Impact</p>
+                  <p className="text-[11px] text-gray-300 leading-relaxed">{findingImpact(finding)}</p>
+                </div>
                 <div>
                   <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Evidence</p>
                   <p className="text-[11px] text-gray-300 font-mono break-words">{finding.evidence}</p>

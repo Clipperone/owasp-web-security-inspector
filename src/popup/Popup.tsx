@@ -43,7 +43,7 @@ export const Popup: React.FC = () => {
           />
         </svg>
         <h1 className="text-[11px] font-semibold tracking-widest text-gray-300 uppercase select-none flex-1 min-w-0 truncate">
-          Cookie · Token · Header Editor
+          OWASP Web Security Inspector
         </h1>
       </header>
 
