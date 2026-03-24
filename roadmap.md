@@ -97,37 +97,6 @@ Supportare meglio debugging e test manuali ripetibili.
 
 - L'estensione aiuta a confrontare rapidamente prima e dopo di una modifica.
 
-## Fase 11 - Consolidamento responsabilita' storage e messaging
-
-### Obiettivo
-
-Ridurre accoppiamento e scritture duplicate.
-
-### Scope
-
-- Rendere il background unico punto di scrittura per i flussi principali.
-- Lasciare il popup come client UI.
-
-### File attesi
-
-- `src/popup/HeadersTab.tsx`
-- `src/background/index.ts`
-- `src/utils/storageUtils.ts`
-
-### Modifiche previste
-
-- Eliminare doppie scritture come salvataggio diretto + messaggio runtime nello stesso flusso.
-- Uniformare pattern CRUD.
-
-### Validazione
-
-1. Rieseguire tutti i flussi CRUD header.
-2. Confermare che storage e UI restino coerenti.
-
-### Done when
-
-- Le responsabilita' tra popup e background sono piu' nette.
-
 ## Fase 13 - Estrazione componenti e hook piccoli
 
 ### Obiettivo
@@ -200,9 +169,8 @@ Eseguire anche il comando test introdotto in questa fase.
 
 1. Fase 9
 2. Fase 10
-3. Fase 11
-4. Fase 13
-5. Fase 14
+3. Fase 13
+4. Fase 14
 
 ## Regola pratica per non fare modifiche massive
 

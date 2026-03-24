@@ -102,6 +102,20 @@ export interface HeaderRule {
   updatedAt: string;
 }
 
+/** Input required from the UI to create a new persisted header rule. */
+export interface HeaderRuleDraft {
+  /** Display name set by the user. */
+  name: string;
+  /** URL filter pattern (supports wildcards, e.g. `*://*.example.com/*`). */
+  urlFilter: string;
+  /** Modifications applied to outgoing request headers. */
+  requestHeaders?: HeaderModification[];
+  /** Modifications applied to incoming response headers. */
+  responseHeaders?: HeaderModification[];
+  /** Optional domain restriction mapped to DNR requestDomains. */
+  domainScope?: string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage inspection types  (content script → background → popup)
 // ─────────────────────────────────────────────────────────────────────────────

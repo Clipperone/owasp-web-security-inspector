@@ -1,6 +1,5 @@
 ﻿import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
-import { nextRuleId, saveRule } from '../utils/storageUtils';
+import type { HeaderModification, HeaderOperation, HeaderRule, HeaderRuleDraft } from '../types';
 import { validateHeaderModification, defaultRuleName } from '../utils/headerUtils';
 import { exportToCurl } from '../utils/exporter';
 
@@ -439,25 +438,27 @@ export const HeadersTab: React.FC = () => {
         ? { header: form.header.trim(), operation: 'remove' }
         : { header: form.header.trim(), operation: form.operation, value: form.value.trim() };
 
-      const rule: HeaderRule = {
-        id: editingRuleId ?? await nextRuleId(),
-        priority:        currentRule?.priority ?? 1,
+      const rulePayload: HeaderRuleDraft = {
         name:            form.name.trim() || defaultRuleName(form.operation, form.header),
-        enabled:         currentRule?.enabled ?? true,
         urlFilter:       form.urlFilter.trim() || '*://*/*',
         requestHeaders:  form.target === 'request'  ? [mod] : undefined,
         responseHeaders: form.target === 'response' ? [mod] : undefined,
         domainScope:     form.scopeMode === 'domain' ? effectiveScopeDomain : undefined,
-        createdAt:       currentRule?.createdAt ?? now,
-        updatedAt:       now,
       };
 
       const res = editingRuleId
-        ? await chrome.runtime.sendMessage({ type: 'UPDATE_HEADER_RULE', payload: rule })
-        : await (async () => {
-          await saveRule(rule);
-          return chrome.runtime.sendMessage({ type: 'ADD_HEADER_RULE', payload: rule });
-        })();
+        ? await chrome.runtime.sendMessage({
+          type: 'UPDATE_HEADER_RULE',
+          payload: {
+            id: editingRuleId,
+            priority: currentRule?.priority ?? 1,
+            enabled: currentRule?.enabled ?? true,
+            createdAt: currentRule?.createdAt ?? now,
+            updatedAt: now,
+            ...rulePayload,
+          } satisfies HeaderRule,
+        })
+        : await chrome.runtime.sendMessage({ type: 'ADD_HEADER_RULE', payload: rulePayload });
 
       if (res?.success) {
         // Background returns the full updated list — set it directly, no extra GET round-trip

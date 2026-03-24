@@ -35,16 +35,15 @@ import type {
   ExtensionMessage,
   ExtensionResponse,
   HeaderModification,
+  HeaderRuleDraft,
   HeaderRule,
   StorageScanResult,
 } from '../types';
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
 import {
-  deleteRule,
   getRules,
   normalizeRulePriorities,
-  saveRule,
-  toggleRule,
+  setRules,
 } from '../utils/storageUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,6 +191,17 @@ export async function updateNetworkRules(rules: HeaderRule[]): Promise<void> {
   });
 }
 
+async function persistRulesAndSync(rules: HeaderRule[]): Promise<HeaderRule[]> {
+  await setRules(rules);
+  await updateNetworkRules(rules);
+  return rules;
+}
+
+function nextRuntimeRuleId(rules: HeaderRule[]): number {
+  if (rules.length === 0) return 1;
+  return Math.max(...rules.map(rule => rule.id)) + 1;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Response header cache  (webRequest → chrome.storage.session per tab)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -282,29 +292,73 @@ async function handleMessage(
         return { success: true, data: rules };
       }
 
-      case 'ADD_HEADER_RULE':
+      case 'ADD_HEADER_RULE': {
+        const draft = message.payload as HeaderRuleDraft;
+        const existing = await getRules();
+        const now = new Date().toISOString();
+        const createdRule: HeaderRule = {
+          id: nextRuntimeRuleId(existing),
+          priority: 1,
+          name: draft.name,
+          enabled: true,
+          urlFilter: draft.urlFilter,
+          requestHeaders: draft.requestHeaders,
+          responseHeaders: draft.responseHeaders,
+          domainScope: draft.domainScope,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const normalized = normalizeRulePriorities([...existing, createdRule]);
+        const all = await persistRulesAndSync(normalized);
+        return { success: true, data: all };
+      }
+
       case 'UPDATE_HEADER_RULE': {
-        const rule = message.payload as HeaderRule;
-        await saveRule(rule);
-        const all = await getRules();
-        await updateNetworkRules(all);
-        // Return the full updated list so the popup can refresh in one round-trip
+        const incoming = message.payload as HeaderRule;
+        const existing = await getRules();
+        const current = existing.find(rule => rule.id === incoming.id);
+        if (!current) {
+          return { success: false, error: `Rule ${incoming.id} not found.` };
+        }
+
+        const updatedRule: HeaderRule = {
+          ...current,
+          ...incoming,
+          createdAt: current.createdAt,
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedRules = existing.map(rule => (rule.id === incoming.id ? updatedRule : rule));
+        const all = await persistRulesAndSync(updatedRules);
         return { success: true, data: all };
       }
 
       case 'DELETE_HEADER_RULE': {
         const id = message.payload as number;
-        await deleteRule(id);
-        const all = await getRules();
-        await updateNetworkRules(all);
+        const existing = await getRules();
+        const filtered = existing.filter(rule => rule.id !== id);
+        if (filtered.length === existing.length) {
+          return { success: false, error: `Rule ${id} not found.` };
+        }
+        const normalized = normalizeRulePriorities(filtered);
+        const all = await persistRulesAndSync(normalized);
         return { success: true, data: all };
       }
 
       case 'TOGGLE_HEADER_RULE': {
         const id = message.payload as number;
-        await toggleRule(id);
-        const all = await getRules();
-        await updateNetworkRules(all);
+        const existing = await getRules();
+        const current = existing.find(rule => rule.id === id);
+        if (!current) {
+          return { success: false, error: `Rule ${id} not found.` };
+        }
+
+        const toggled: HeaderRule = {
+          ...current,
+          enabled: !current.enabled,
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedRules = existing.map(rule => (rule.id === id ? toggled : rule));
+        const all = await persistRulesAndSync(updatedRules);
         return { success: true, data: all };
       }
 
@@ -377,10 +431,14 @@ async function handleMessage(
         const reordered = orderedIds
           .map(id => idToRule.get(id))
           .filter((r): r is HeaderRule => r !== undefined);
+
+        if (reordered.length !== existing.length) {
+          return { success: false, error: 'Reorder payload does not match the persisted rule set.' };
+        }
+
         const normalized = normalizeRulePriorities(reordered);
-        await chrome.storage.local.set({ [STORAGE_KEYS.HEADER_RULES]: normalized });
-        await updateNetworkRules(normalized);
-        return { success: true, data: normalized };
+        const all = await persistRulesAndSync(normalized);
+        return { success: true, data: all };
       }
 
       // ── Active tab info ─────────────────────────────────────────────────

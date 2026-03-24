@@ -73,87 +73,18 @@ export async function getRules(): Promise<HeaderRule[]> {
  * has the highest DNR priority and the last rule has the lowest one.
  */
 export function normalizeRulePriorities(rules: HeaderRule[]): HeaderRule[] {
-  const updatedAt = new Date().toISOString();
-
   return rules.map((rule, index) => ({
     ...rule,
     priority: rules.length - index,
-    updatedAt,
   }));
 }
 
 /**
- * Persists a header rule using **upsert** semantics:
- * - If a rule with the same `id` exists it is **replaced**.
- * - If no matching `id` exists the rule is **appended**.
- *
- * `updatedAt` is automatically set to the current ISO 8601 timestamp on
- * every call, so callers do not need to manage it manually.
- *
- * @param rule - The complete `HeaderRule` to save. The caller is responsible
- *               for supplying `id`, `priority`, and `createdAt`.
+ * Persists the complete ordered rule list exactly as provided.
+ * Callers are responsible for any priority normalization before writing.
  */
-export async function saveRule(rule: HeaderRule): Promise<void> {
-  const existing = await getRules();
-  const idx      = existing.findIndex((r) => r.id === rule.id);
-
-  const updated: HeaderRule = {
-    ...rule,
-    updatedAt: new Date().toISOString(),
-  };
-
-  if (idx === -1) {
-    existing.push(updated);
-  } else {
-    existing[idx] = updated;
-  }
-
-  await setItem(STORAGE_KEYS.HEADER_RULES, existing);
-}
-
-/**
- * Removes the rule with the given `id`.
- * Is a no-op (does NOT throw) if no matching rule exists.
- *
- * @param id - The numeric rule ID to delete.
- */
-export async function deleteRule(id: number): Promise<void> {
-  const existing = await getRules();
-  const filtered = existing.filter((r) => r.id !== id);
-  // Skip the write if nothing changed to avoid unnecessary storage events
-  if (filtered.length === existing.length) return;
-  await setItem(STORAGE_KEYS.HEADER_RULES, filtered);
-}
-
-/**
- * Toggles the `enabled` flag of the rule with the given `id` and persists
- * the change. Is a no-op if the rule does not exist.
- *
- * @param id - The numeric rule ID to toggle.
- * @returns The updated `HeaderRule`, or `undefined` if not found.
- */
-export async function toggleRule(id: number): Promise<HeaderRule | undefined> {
-  const existing = await getRules();
-  const rule     = existing.find((r) => r.id === id);
-  if (!rule) return undefined;
-
-  const toggled: HeaderRule = { ...rule, enabled: !rule.enabled };
-  await saveRule(toggled);
-  return toggled;
-}
-
-/**
- * Generates the next available rule ID — one greater than the current maximum.
- * Starts at `1` when no rules exist, satisfying the DNR API requirement that
- * rule IDs must be positive integers (≥ 1).
- *
- * Using max + 1 (instead of array length + 1) ensures IDs are never reused
- * after a rule has been deleted.
- */
-export async function nextRuleId(): Promise<number> {
-  const rules = await getRules();
-  if (rules.length === 0) return 1;
-  return Math.max(...rules.map((r) => r.id)) + 1;
+export async function setRules(rules: HeaderRule[]): Promise<void> {
+  await setItem(STORAGE_KEYS.HEADER_RULES, rules);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
