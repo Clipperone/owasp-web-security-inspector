@@ -2,7 +2,6 @@
 import type { HeaderModification, HeaderOperation, HeaderRule } from '../types';
 import { nextRuleId, saveRule } from '../utils/storageUtils';
 import { validateHeaderModification, defaultRuleName } from '../utils/headerUtils';
-import { useScope } from './ScopeContext';
 import { exportToCurl } from '../utils/exporter';
 
 // Types
@@ -29,13 +28,9 @@ const EMPTY_FORM: FormState = {
   scopeDomain: '',
 };
 
-function createFormState(
-  scopeMode: 'global' | 'domain',
-  activeDomain: string,
-): FormState {
+function createFormState(activeDomain: string): FormState {
   return {
     ...EMPTY_FORM,
-    scopeMode,
     scopeDomain: activeDomain,
   };
 }
@@ -320,7 +315,6 @@ export const HeadersTab: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [toast, setToast]   = useState<{ ok: boolean; msg: string } | null>(null);
   const toastTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { mode, activeDomain } = useScope();
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
 
   // Export dropdown
@@ -333,6 +327,7 @@ export const HeadersTab: React.FC = () => {
 
   // Active tab info
   const [tabUrl, setTabUrl] = useState('');
+  const [activeDomain, setActiveDomain] = useState('');
 
   // Drag state
   const dragIndex = useRef<number | null>(null);
@@ -348,25 +343,31 @@ export const HeadersTab: React.FC = () => {
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    if (editingRuleId !== null) return;
-
-    setForm(prev => ({
-      ...prev,
-      scopeMode: mode,
-      scopeDomain: activeDomain,
-    }));
-  }, [mode, activeDomain, editingRuleId]);
-
-  // Fetch active tab URL for the live-preview badge
+  // Fetch active tab URL and domain for the live-preview badge and scoped-rule helper.
   useEffect(() => {
     void (async () => {
       try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        setTabUrl(tab?.url ?? '');
+        const url = tab?.url ?? '';
+        setTabUrl(url);
+
+        try {
+          setActiveDomain(url ? new URL(url).hostname : '');
+        } catch {
+          setActiveDomain('');
+        }
       } catch { /* silent */ }
     })();
   }, []);
+
+  useEffect(() => {
+    if (editingRuleId !== null || !activeDomain) return;
+
+    setForm(prev => {
+      if (prev.scopeDomain.trim()) return prev;
+      return { ...prev, scopeDomain: activeDomain };
+    });
+  }, [activeDomain, editingRuleId]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -462,7 +463,7 @@ export const HeadersTab: React.FC = () => {
         // Background returns the full updated list — set it directly, no extra GET round-trip
         setRules(res.data as HeaderRule[]);
         setEditingRuleId(null);
-        setForm(createFormState(mode, activeDomain));
+        setForm(createFormState(activeDomain));
         showToast(true, editingRuleId ? 'Rule updated successfully.' : 'Rule saved successfully.');
       } else {
         showToast(false, res?.error ?? 'Failed to save rule.');
@@ -482,7 +483,7 @@ export const HeadersTab: React.FC = () => {
 
   const handleCancelEdit = () => {
     setEditingRuleId(null);
-    setForm(createFormState(mode, activeDomain));
+    setForm(createFormState(activeDomain));
     setToast(null);
   };
 
@@ -646,7 +647,16 @@ export const HeadersTab: React.FC = () => {
         <div className="flex gap-2">
           <Select
             value={form.scopeMode}
-            onChange={v => patchForm('scopeMode', v as FormState['scopeMode'])}
+            onChange={v => {
+              const nextMode = v as FormState['scopeMode'];
+              setForm(prev => ({
+                ...prev,
+                scopeMode: nextMode,
+                scopeDomain: nextMode === 'domain' && !prev.scopeDomain.trim()
+                  ? activeDomain
+                  : prev.scopeDomain,
+              }));
+            }}
             options={[
               { value: 'global', label: 'Global scope' },
               { value: 'domain', label: 'Scoped domain' },

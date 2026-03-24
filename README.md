@@ -10,7 +10,7 @@ A Chrome Extension (Manifest V3) for developers to inspect and manipulate **cook
 |-----|-------------|
 | **Cookies** | List all cookies for the active page. Create, edit (name, value, domain, path, SameSite, expiry, Secure, HttpOnly flags), and delete cookies with inline confirmation. **Export** the visible cookie set as a `curl` command or a Netscape `cookies.txt` file (compatible with yt-dlp, wget, and curl). Cookies whose value is a JWT token show a **`JWT` badge**; clicking the badge instantly sends the value to the **Tokens** tab for analysis. A **Clear All** button (🗑) removes every cookie for the current site at once after an inline confirmation step. |
 | **Response Headers** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. The tab captures top-level documents (`DOC`), embedded documents / iframes (`IFR`), and XHR/fetch traffic (`XHR`). An OWASP-aligned security summary highlights tracked headers on the primary response for the active tab, marks missing ones in red, and flags present-but-weak configurations in yellow. If the latest top-level document response is no longer available in cache, the tab falls back to an inferred primary response from the active host and labels it clearly. Each row shows URL, method, status code, resource type, and timestamp. Expand any row to inspect the full header list, the missing tracked headers for that request, and hover the badges to see the full header name. |
-| **Modify Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off, edit existing rules inline, or delete them without reloading the extension. Use the **Global / This Site** scope toggle as a default and override scope per rule with **Global scope** or **Scoped domain** in the form. Apply **Quick Templates** (e.g. Bearer Token, CORS Bypass, Debug Header) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag and drop. **Export** request-header rules as a `curl -H` command. |
+| **Modify Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off, edit existing rules inline, or delete them without reloading the extension. Scope each rule directly in the form with **Global scope** or **Scoped domain**. Apply **Quick Templates** (e.g. Bearer Token, CORS Bypass, Debug Header) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag and drop. **Export** request-header rules as a `curl -H` command. |
 | **Tokens** | **Real-time JWT decoder**: paste a token and it decodes instantly. Displays three collapsible sections (**Header**, **Payload**, **Signature**) with colour-coded JSON syntax highlighting. `exp`, `iat`, and `nbf` claims show the human-readable local date alongside the unix value. A prominent **⚠️ Token Expired** banner appears when `exp` is in the past. Also surfaces valid JWTs found automatically by the page scanner in `localStorage` / `sessionStorage`, and the refresh button triggers a real rescan of the active tab. |
 
 ---
@@ -237,8 +237,7 @@ Use the search box in the **Response Headers** tab to show only requests matchin
     └── popup/
         ├── main.tsx           # ReactDOM.createRoot entry point
         ├── App.tsx            # Root component → <Popup />
-        ├── ScopeContext.tsx   # React context: Global / This Site scope toggle
-        ├── Popup.tsx          # Tab shell (Cookies | Response Headers | Modify Headers | Tokens) + scope header
+        ├── Popup.tsx          # Tab shell (Cookies | Response Headers | Modify Headers | Tokens)
         ├── CookieTab.tsx          # Cookie inspector & editor
         ├── HeadersTab.tsx         # Header rule editor (scope-aware, templates, inline editing, DnD reorder)
         ├── TokensTab.tsx          # Real-time JWT decoder, storage token viewer, and manual rescan
@@ -260,16 +259,14 @@ Use the search box in the **Response Headers** tab to show only requests matchin
 
 ---
 
-## Tab-Scoped Header Rules
-
-The popup header contains a **Global / This Site** toggle that controls the scope of newly created header rules.
+## Per-Rule Header Scope
 
 | Mode | Behaviour |
 |------|-----------|
 | **Global** (default) | The rule applies to all URLs matching the `urlFilter` pattern, regardless of which site you're on. |
-| **This Site** | The rule is restricted to the hostname of the currently active tab (e.g. `example.com`). Chrome's DNR `requestDomains` condition is used under the hood — the rule fires only when the initiator domain matches. |
+| **Scoped domain** | The rule is restricted to the hostname of the currently active tab (e.g. `example.com`). Chrome's DNR `requestDomains` condition is used under the hood — the rule fires only when the initiator domain matches. |
 
-The toggle is disabled when the active tab is not a regular web page (e.g. `chrome://` or `about:` pages). The current hostname is displayed next to the toggle for clarity.
+Choose the scope directly in the **Modify Headers** form when creating or editing a rule. When you switch to **Scoped domain**, the current tab hostname is used as a starting value when available, and you can still override it manually.
 
 The `domainScope` field is stored alongside each `HeaderRule` in `chrome.storage.local`. Existing rules without `domainScope` continue to behave as global rules.
 

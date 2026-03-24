@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { CookieTab } from './CookieTab';
 import { CurrentHeadersTab } from './CurrentHeadersTab';
 import { HeadersTab } from './HeadersTab';
-import { ScopeProvider, useScope } from './ScopeContext';
 import { TokensTab } from './TokensTab';
 
 type TabId = 'cookies' | 'headers' | 'tokens' | 'response';
@@ -14,50 +13,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'tokens',   label: 'Tokens'           },
 ];
 
-// ── Scope toggle (rendered inside ScopeProvider) ─────────────────────────────
-const ScopeToggle: React.FC = () => {
-  const { mode, setMode, activeDomain, loading } = useScope();
-  const isDomain = mode === 'domain';
-
-  return (
-    <div className="flex items-center gap-2 shrink-0">
-      {/* Domain label */}
-      <span className="text-[10px] text-gray-500 truncate max-w-[120px] select-none" title={activeDomain || undefined}>
-        {loading
-          ? '…'
-          : isDomain && activeDomain
-            ? activeDomain
-            : 'All sites'}
-      </span>
-
-      {/* Toggle */}
-      <button
-        onClick={() => setMode(isDomain ? 'global' : 'domain')}
-        disabled={loading || !activeDomain}
-        title={isDomain ? 'Switch to Global (all sites)' : `Restrict to ${activeDomain || 'current domain'}`}
-        className={[
-          'relative flex h-4 w-7 items-center rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0',
-          isDomain ? 'bg-blue-600' : 'bg-gray-700',
-        ].join(' ')}
-      >
-        <span
-          className={[
-            'absolute h-3 w-3 rounded-full bg-white shadow transition-transform duration-200',
-            isDomain ? 'translate-x-3.5' : 'translate-x-0.5',
-          ].join(' ')}
-        />
-      </button>
-
-      {/* Mode label */}
-      <span className={`text-[10px] font-medium select-none ${isDomain ? 'text-blue-400' : 'text-gray-600'}`}>
-        {isDomain ? 'Site only' : 'Global'}
-      </span>
-    </div>
-  );
-};
-
-// ── Inner popup (must be inside ScopeProvider) ─────────────────────────────────
-const PopupInner: React.FC = () => {
+export const Popup: React.FC = () => {
   const [active, setActive]         = useState<TabId>('cookies');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
 
@@ -87,7 +43,6 @@ const PopupInner: React.FC = () => {
         <h1 className="text-[11px] font-semibold tracking-widest text-gray-300 uppercase select-none flex-1 min-w-0 truncate">
           Cookie · Token · Header Editor
         </h1>
-        <ScopeToggle />
       </header>
 
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
@@ -119,9 +74,3 @@ const PopupInner: React.FC = () => {
     </div>
   );
 };
-
-export const Popup: React.FC = () => (
-  <ScopeProvider>
-    <PopupInner />
-  </ScopeProvider>
-);
