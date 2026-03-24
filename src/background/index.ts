@@ -234,6 +234,8 @@ chrome.webRequest.onHeadersReceived.addListener(
         await chrome.storage.session.set({ [key]: updated });
       } catch { /* silent */ }
     })();
+
+    return undefined;
   },
   { urls: ['<all_urls>'], types: ['main_frame', 'sub_frame', 'xmlhttprequest'] },
   ['responseHeaders'],
@@ -323,7 +325,7 @@ async function handleMessage(
       }
 
       case 'DELETE_COOKIE': {
-        const details = message.payload as chrome.cookies.Details;
+        const details = message.payload as chrome.cookies.CookieDetails;
         await chrome.cookies.remove(details);
         return { success: true, data: null };
       }

@@ -4,7 +4,7 @@ import { exportToCurl, exportToNetscape } from '../utils/exporter';
 import { isJwt } from '../utils/jwtUtils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type SameSite = chrome.cookies.SameSiteStatus;
+type SameSite = `${chrome.cookies.SameSiteStatus}`;
 
 interface Draft {
   name: string;

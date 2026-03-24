@@ -196,42 +196,6 @@ Eseguire anche il comando test introdotto in questa fase.
 
 - Le utility piu' critiche hanno copertura minima ma utile.
 
-## Fase 15 - Aggiornamento dipendenze in modalita' conservativa
-
-### Obiettivo
-
-Ridurre il rischio tecnico senza introdurre regressioni difficili da isolare.
-
-### Scope
-
-- Prima patch e minor non invasive.
-- Solo dopo, valutazione di upgrade maggiori.
-- Controllo specifico del plugin CRX, che e' il punto piu' delicato.
-
-### File attesi
-
-- `package.json`
-- `package-lock.json`
-- eventuali config da adattare se richiesto dalle nuove versioni
-
-### Modifiche previste
-
-- Step 15A: aggiornare `vite`, `@vitejs/plugin-react`, `typescript`, `@types/*`, `@types/chrome`.
-- Step 15B: verificare `@crxjs/vite-plugin` e decidere se restare sulla beta o migrare a una release piu' stabile.
-- Step 15C: valutare upgrade maggiori di React o Tailwind solo a progetto stabile.
-
-### Validazione
-
-```bash
-npm install
-npm run lint
-npm run build
-```
-
-### Done when
-
-- Le dipendenze sono aggiornate in modo tracciabile e con rischio controllato.
-
 ## Sequenza consigliata per PR o commit
 
 1. Fase 9
@@ -239,7 +203,6 @@ npm run build
 3. Fase 11
 4. Fase 13
 5. Fase 14
-6. Fase 15
 
 ## Regola pratica per non fare modifiche massive
 
