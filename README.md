@@ -10,7 +10,7 @@ A Chrome Extension (Manifest V3) for developers to inspect and manipulate **cook
 |-----|-------------|
 | **Cookies** | List all cookies for the active page. Create, edit (name, value, domain, path, SameSite, expiry, Secure, HttpOnly flags), and delete cookies with inline confirmation. **Export** the visible cookie set as a `curl` command or a Netscape `cookies.txt` file (compatible with yt-dlp, wget, and curl). Cookies whose value is a JWT token show a **`JWT` badge**; clicking the badge instantly sends the value to the **Tokens** tab for analysis. A **Clear All** button (🗑) removes every cookie for the current site at once after an inline confirmation step. |
 | **Response Headers** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. Security-relevant headers (CSP, HSTS, X-Frame-Options, CORS, etc.) are highlighted with colour-coded badges. Filter requests by URL and expand any row to inspect the full header list. |
-| **Modify Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off, edit existing rules inline, or delete them without reloading the extension. Use the **Global / This Site** scope toggle as a default and override scope per rule with **Global scope** or **Scoped domain** in the form. Apply **Quick Templates** (e.g. Bearer Token, CORS Bypass, Debug Header) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag and drop. **Export** rules as a `curl -H` command. |
+| **Modify Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off, edit existing rules inline, or delete them without reloading the extension. Use the **Global / This Site** scope toggle as a default and override scope per rule with **Global scope** or **Scoped domain** in the form. Apply **Quick Templates** (e.g. Bearer Token, CORS Bypass, Debug Header) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag and drop. **Export** request-header rules as a `curl -H` command. |
 | **Tokens** | **Real-time JWT decoder**: paste a token and it decodes instantly. Displays three collapsible sections (**Header**, **Payload**, **Signature**) with colour-coded JSON syntax highlighting. `exp`, `iat`, and `nbf` claims show the human-readable local date alongside the unix value. A prominent **⚠️ Token Expired** banner appears when `exp` is in the past. Also surfaces valid JWTs found automatically by the page scanner in `localStorage` / `sessionStorage`, and the refresh button triggers a real rescan of the active tab. |
 
 ---
@@ -148,9 +148,9 @@ When a cookie value is a JWT, a sky-blue **`JWT`** badge appears in the Flags co
 - Update the name, URL filter, target, operation, header, value, or scope.
 - Click **Update rule** to save changes while preserving the same rule ID and priority.
 
-#### Export all active rules as cURL
+#### Export all active request rules as cURL
 
-Click **Export → Copy as cURL** to get a ready-to-run shell command with all enabled `-H` flags:
+Click **Export → Copy as cURL** to get a ready-to-run shell command with all enabled request-side `-H` flags:
 
 ```bash
 curl 'https://api.example.com/endpoint' \
@@ -287,13 +287,13 @@ Available in both tabs. Produces a bash `curl` command that can be pasted direct
 curl 'https://example.com' \
   -b 'session_id=abc123; user=alice'
 
-# Example output (Modify Headers tab — enabled rules only)
+# Example output (Modify Headers tab — enabled request rules only)
 curl 'https://example.com' \
   -H 'Authorization: Bearer eyJ...' \
   -H 'X-Custom-Header: value'
 ```
 
-All arguments are **single-quoted** and internal single quotes are properly escaped (`'\''`) to prevent bash injection.
+All arguments are **single-quoted** and internal single quotes are properly escaped (`'\''`) to prevent bash injection. In the **Modify Headers** tab, the export includes only request headers that `curl` can actually send.
 
 ### Copy as Netscape cookies.txt
 

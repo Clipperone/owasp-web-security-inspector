@@ -13,10 +13,13 @@ function shEscape(s: string): string {
 
 /**
  * Produces a bash-safe `curl` command that replays the given URL with the
- * supplied cookies and/or enabled header-rule modifications.
+ * supplied cookies and/or enabled request-header modifications.
  *
  * - All arguments are single-quoted to prevent bash injection.
- * - Only enabled rules whose operation is `set` or `append` contribute -H flags.
+ * - Only enabled request-header rules whose operation is `set` or `append`
+ *   contribute `-H` flags.
+ * - Response-header rules are intentionally ignored because `curl` cannot
+ *   reproduce server-side response header mutations.
  * - The command uses line-continuations for readability.
  */
 export function exportToCurl(
@@ -33,10 +36,7 @@ export function exportToCurl(
 
   for (const rule of headers) {
     if (!rule.enabled) continue;
-    const mods = [
-      ...(rule.requestHeaders  ?? []),
-      ...(rule.responseHeaders ?? []),
-    ];
+    const mods = rule.requestHeaders ?? [];
     for (const mod of mods) {
       if (mod.operation !== 'remove' && mod.value !== undefined) {
         parts.push(`  -H '${shEscape(mod.header)}: ${shEscape(mod.value)}'`);
