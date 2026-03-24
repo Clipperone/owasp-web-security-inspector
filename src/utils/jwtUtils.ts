@@ -49,9 +49,9 @@ export type JwtDecodeResult =
 
 /**
  * Returns `true` when `value` matches the compact JWT serialization format
- * (three dot-separated Base64Url segments). This is a lightweight structural
- * check — it does NOT parse JSON. Use it as a cheap guard before calling the
- * more expensive `decodeJwt()`.
+ * and both header and payload decode to JSON objects with a valid JOSE `alg`
+ * header. This avoids false positives from arbitrary dot-separated strings
+ * that happen to look Base64Url-ish.
  *
  * @example
  * isJwt('eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.sig') // → true
@@ -59,19 +59,7 @@ export type JwtDecodeResult =
  * isJwt('')                                               // → false
  */
 export function isJwt(value: string): boolean {
-  if (typeof value !== 'string' || value.length === 0) return false;
-
-  const parts = value.split('.');
-  if (parts.length !== JWT_SEGMENT_COUNT) return false;
-
-  // Header and payload must be non-empty valid Base64Url strings.
-  // Signature may be empty for "alg":"none" unsecured tokens (RFC 7519 §6).
-  return (
-    parts[0].length > 0 &&
-    parts[1].length > 0 &&
-    BASE64URL_SEGMENT_RE.test(parts[0]) &&
-    BASE64URL_SEGMENT_RE.test(parts[1])
-  );
+  return parseJwtEnvelope(value).ok;
 }
 
 /**
@@ -98,30 +86,12 @@ export function isJwt(value: string): boolean {
  * }
  */
 export function decodeJwt(raw: string): JwtDecodeResult {
-  if (!isJwt(raw)) {
-    return { ok: false, error: 'Value does not match the JWT compact serialization format.' };
+  const envelope = parseJwtEnvelope(raw);
+  if (!envelope.ok) {
+    return { ok: false, error: envelope.error };
   }
 
-  const [headerSegment, payloadSegment, signatureSegment] = raw.split('.');
-
-  // ── Decode header ─────────────────────────────────────────────────────────
-  const headerResult = decodeSegment<JWTHeader>(headerSegment!);
-  if (!headerResult.ok) {
-    return { ok: false, error: `Invalid JWT header: ${headerResult.error}` };
-  }
-
-  // The "alg" claim is mandatory in every JOSE header (RFC 7515 §4.1.1)
-  if (typeof headerResult.value.alg !== 'string') {
-    return { ok: false, error: 'Invalid JWT header: missing or non-string "alg" field.' };
-  }
-
-  // ── Decode payload ────────────────────────────────────────────────────────
-  const payloadResult = decodeSegment<JWTPayload>(payloadSegment!);
-  if (!payloadResult.ok) {
-    return { ok: false, error: `Invalid JWT payload: ${payloadResult.error}` };
-  }
-
-  const payload = payloadResult.value;
+  const { header, payload, signature } = envelope;
 
   // Validate numeric time claims — protects against type-confusion attacks
   // where a crafted token sets `exp` to a non-number (e.g. "exp": "never")
@@ -144,9 +114,9 @@ export function decodeJwt(raw: string): JwtDecodeResult {
     ok: true,
     token: {
       raw,
-      header:    headerResult.value,
+      header,
       payload,
-      signature: signatureSegment ?? '',
+      signature,
       isExpired,
       expiresAt,
     },
@@ -194,6 +164,57 @@ export function formatExpiry(token: TokenData): string {
 type SegmentResult<T> =
   | { ok: true;  value: T }
   | { ok: false; error: string };
+
+type JwtEnvelopeResult =
+  | {
+      ok: true;
+      header: JWTHeader;
+      payload: JWTPayload;
+      signature: string;
+    }
+  | { ok: false; error: string };
+
+function parseJwtEnvelope(value: string): JwtEnvelopeResult {
+  if (typeof value !== 'string' || value.length === 0) {
+    return { ok: false, error: 'Value does not match the JWT compact serialization format.' };
+  }
+
+  const parts = value.split('.');
+  if (parts.length !== JWT_SEGMENT_COUNT) {
+    return { ok: false, error: 'Value does not match the JWT compact serialization format.' };
+  }
+
+  const [headerSegment, payloadSegment, signatureSegment] = parts;
+  if (
+    headerSegment.length === 0 ||
+    payloadSegment.length === 0 ||
+    !BASE64URL_SEGMENT_RE.test(headerSegment) ||
+    !BASE64URL_SEGMENT_RE.test(payloadSegment)
+  ) {
+    return { ok: false, error: 'Value does not match the JWT compact serialization format.' };
+  }
+
+  const headerResult = decodeSegment<JWTHeader>(headerSegment);
+  if (!headerResult.ok) {
+    return { ok: false, error: `Invalid JWT header: ${headerResult.error}` };
+  }
+
+  if (typeof headerResult.value.alg !== 'string') {
+    return { ok: false, error: 'Invalid JWT header: missing or non-string "alg" field.' };
+  }
+
+  const payloadResult = decodeSegment<JWTPayload>(payloadSegment);
+  if (!payloadResult.ok) {
+    return { ok: false, error: `Invalid JWT payload: ${payloadResult.error}` };
+  }
+
+  return {
+    ok: true,
+    header: headerResult.value,
+    payload: payloadResult.value,
+    signature: signatureSegment ?? '',
+  };
+}
 
 /**
  * Converts a single Base64Url-encoded JWT segment into a typed JSON object.

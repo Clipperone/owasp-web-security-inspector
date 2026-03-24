@@ -5,7 +5,7 @@ import { validateHeaderModification, defaultRuleName } from '../utils/headerUtil
 import { useScope } from './ScopeContext';
 import { exportToCurl } from '../utils/exporter';
 
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Types
 
 interface FormState {
   name:      string;
@@ -14,6 +14,8 @@ interface FormState {
   value:     string;
   operation: HeaderOperation;
   target:    'request' | 'response';
+  scopeMode: 'global' | 'domain';
+  scopeDomain: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -23,9 +25,39 @@ const EMPTY_FORM: FormState = {
   value:     '',
   operation: 'set',
   target:    'request',
+  scopeMode: 'global',
+  scopeDomain: '',
 };
 
-// â”€â”€ Quick templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function createFormState(
+  scopeMode: 'global' | 'domain',
+  activeDomain: string,
+): FormState {
+  return {
+    ...EMPTY_FORM,
+    scopeMode,
+    scopeDomain: activeDomain,
+  };
+}
+
+function toFormState(rule: HeaderRule): FormState {
+  const requestMod = rule.requestHeaders?.[0];
+  const responseMod = rule.responseHeaders?.[0];
+  const mod = requestMod ?? responseMod;
+
+  return {
+    name: rule.name,
+    urlFilter: rule.urlFilter,
+    header: mod?.header ?? '',
+    value: mod?.value ?? '',
+    operation: mod?.operation ?? 'set',
+    target: requestMod ? 'request' : 'response',
+    scopeMode: rule.domainScope ? 'domain' : 'global',
+    scopeDomain: rule.domainScope ?? '',
+  };
+}
+
+// Quick templates
 
 interface Template {
   label:     string;
@@ -59,7 +91,7 @@ const TEMPLATES: Template[] = [
   },
 ];
 
-// â”€â”€ Helpers / icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Helpers and icons
 
 const IconPlus: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -70,6 +102,12 @@ const IconPlus: React.FC<{ className?: string }> = ({ className }) => (
 const IconTrash: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+  </svg>
+);
+
+const IconPencil: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
   </svg>
 );
 
@@ -130,18 +168,20 @@ const TextInput: React.FC<{
   />
 );
 
-// â”€â”€ Rule row (drag-and-drop aware) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Rule row (drag-and-drop aware)
 
 const RuleRow: React.FC<{
   rule:        HeaderRule;
   index:       number;
   dragging:    number | null;
+  editing:     boolean;
+  onEdit:      (rule: HeaderRule) => void;
   onToggle:    (id: number) => void;
   onDelete:    (id: number) => void;
   onDragStart: (index: number) => void;
   onDragOver:  (index: number) => void;
   onDrop:      () => void;
-}> = ({ rule, index, dragging, onToggle, onDelete, onDragStart, onDragOver, onDrop }) => {
+}> = ({ rule, index, dragging, editing, onEdit, onToggle, onDelete, onDragStart, onDragOver, onDrop }) => {
   const [open, setOpen]         = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
@@ -161,6 +201,7 @@ const RuleRow: React.FC<{
       className={[
         'border-b border-gray-800/60 text-[11px] transition-opacity duration-150',
         rule.enabled ? '' : 'opacity-50',
+        editing ? 'bg-blue-950/20' : '',
         isDragging ? 'opacity-40 bg-blue-900/10' : '',
       ].join(' ')}
     >
@@ -201,21 +242,35 @@ const RuleRow: React.FC<{
           <IconChevron open={open} />
         </button>
 
-        {/* Delete */}
-        {confirmDel ? (
-          <div className="flex items-center gap-1.5 shrink-0">
-          <button onClick={() => onDelete(rule.id)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">✔</button>
-            <button onClick={() => setConfirmDel(false)} className="text-[10px] text-gray-600 hover:text-gray-400">✖</button>
-          </div>
-        ) : (
+        <div className="flex items-center gap-1 shrink-0">
           <button
-            onClick={() => setConfirmDel(true)}
-            title="Delete rule"
-            className="p-1 rounded text-gray-700 hover:text-red-400 hover:bg-gray-800 transition-colors opacity-0 group-hover:opacity-100"
+            onClick={() => onEdit(rule)}
+            title="Edit rule"
+            className={[
+              'p-1 rounded transition-colors',
+              editing
+                ? 'text-blue-300 bg-blue-900/30'
+                : 'text-gray-700 hover:text-blue-400 hover:bg-gray-800 opacity-0 group-hover:opacity-100',
+            ].join(' ')}
           >
-            <IconTrash className="w-3 h-3" />
+            <IconPencil className="w-3 h-3" />
           </button>
-        )}
+
+          {confirmDel ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button onClick={() => onDelete(rule.id)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">✔</button>
+              <button onClick={() => setConfirmDel(false)} className="text-[10px] text-gray-600 hover:text-gray-400">✖</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDel(true)}
+              title="Delete rule"
+              className="p-1 rounded text-gray-700 hover:text-red-400 hover:bg-gray-800 transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <IconTrash className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Expanded modifications */}
@@ -255,7 +310,7 @@ const RuleRow: React.FC<{
   );
 };
 
-// â”€â”€ HeadersTab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// HeadersTab
 
 export const HeadersTab: React.FC = () => {
   const [rules, setRules]   = useState<HeaderRule[]>([]);
@@ -264,6 +319,7 @@ export const HeadersTab: React.FC = () => {
   const [toast, setToast]   = useState<{ ok: boolean; msg: string } | null>(null);
   const toastTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { mode, activeDomain } = useScope();
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
 
   // Export dropdown
   const [exportOpen, setExportOpen] = useState(false);
@@ -280,7 +336,7 @@ export const HeadersTab: React.FC = () => {
   const dragIndex = useRef<number | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
 
-  // â”€â”€ Load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Load
   const load = useCallback(async () => {
     try {
       const res = await chrome.runtime.sendMessage({ type: 'GET_HEADER_RULES' });
@@ -289,6 +345,16 @@ export const HeadersTab: React.FC = () => {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (editingRuleId !== null) return;
+
+    setForm(prev => ({
+      ...prev,
+      scopeMode: mode,
+      scopeDomain: activeDomain,
+    }));
+  }, [mode, activeDomain, editingRuleId]);
 
   // Fetch active tab URL for the live-preview badge
   useEffect(() => {
@@ -310,7 +376,7 @@ export const HeadersTab: React.FC = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // â”€â”€ Live preview badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Live preview badge
   const matchingCount = (() => {
     if (!tabUrl) return 0;
     let hostname = '';
@@ -324,14 +390,14 @@ export const HeadersTab: React.FC = () => {
     }).length;
   })();
 
-  // â”€â”€ Toast helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Toast helper
   const showToast = (ok: boolean, msg: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ ok, msg });
     toastTimer.current = setTimeout(() => setToast(null), 2800);
   };
 
-  // â”€â”€ Form helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Form helpers
   const patchForm = <K extends keyof FormState>(key: K, val: FormState[K]) =>
     setForm(prev => ({ ...prev, [key]: val }));
 
@@ -348,40 +414,53 @@ export const HeadersTab: React.FC = () => {
     setTplOpen(false);
   };
 
-  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Save
   const handleSave = async () => {
     const validationErr = validateHeaderModification(form.header, form.operation, form.value);
     if (validationErr) { showToast(false, validationErr); return; }
 
+    const effectiveScopeDomain = form.scopeDomain.trim() || activeDomain;
+    if (form.scopeMode === 'domain' && !effectiveScopeDomain) {
+      showToast(false, 'A scoped rule requires a domain.');
+      return;
+    }
+
     setSaving(true);
     try {
-      const id       = await nextRuleId();
+      const currentRule = editingRuleId
+        ? rules.find(r => r.id === editingRuleId) ?? null
+        : null;
       const now      = new Date().toISOString();
       const mod: HeaderModification = form.operation === 'remove'
         ? { header: form.header.trim(), operation: 'remove' }
         : { header: form.header.trim(), operation: form.operation, value: form.value.trim() };
 
       const rule: HeaderRule = {
-        id,
-        priority:        1,
+        id: editingRuleId ?? await nextRuleId(),
+        priority:        currentRule?.priority ?? 1,
         name:            form.name.trim() || defaultRuleName(form.operation, form.header),
-        enabled:         true,
+        enabled:         currentRule?.enabled ?? true,
         urlFilter:       form.urlFilter.trim() || '*://*/*',
         requestHeaders:  form.target === 'request'  ? [mod] : undefined,
         responseHeaders: form.target === 'response' ? [mod] : undefined,
-        domainScope:     mode === 'domain' && activeDomain ? activeDomain : undefined,
-        createdAt:       now,
+        domainScope:     form.scopeMode === 'domain' ? effectiveScopeDomain : undefined,
+        createdAt:       currentRule?.createdAt ?? now,
         updatedAt:       now,
       };
 
-      await saveRule(rule);
-      const res = await chrome.runtime.sendMessage({ type: 'ADD_HEADER_RULE', payload: rule });
+      const res = editingRuleId
+        ? await chrome.runtime.sendMessage({ type: 'UPDATE_HEADER_RULE', payload: rule })
+        : await (async () => {
+          await saveRule(rule);
+          return chrome.runtime.sendMessage({ type: 'ADD_HEADER_RULE', payload: rule });
+        })();
 
       if (res?.success) {
         // Background returns the full updated list — set it directly, no extra GET round-trip
         setRules(res.data as HeaderRule[]);
-        setForm(EMPTY_FORM);
-        showToast(true, 'Rule saved successfully.');
+        setEditingRuleId(null);
+        setForm(createFormState(mode, activeDomain));
+        showToast(true, editingRuleId ? 'Rule updated successfully.' : 'Rule saved successfully.');
       } else {
         showToast(false, res?.error ?? 'Failed to save rule.');
       }
@@ -392,7 +471,19 @@ export const HeadersTab: React.FC = () => {
     }
   };
 
-  // â”€â”€ Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleEdit = (rule: HeaderRule) => {
+    setEditingRuleId(rule.id);
+    setForm(toFormState(rule));
+    setToast(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRuleId(null);
+    setForm(createFormState(mode, activeDomain));
+    setToast(null);
+  };
+
+  // Toggle
   const handleToggle = async (id: number) => {
     try {
       const res = await chrome.runtime.sendMessage({ type: 'TOGGLE_HEADER_RULE', payload: id });
@@ -408,7 +499,7 @@ export const HeadersTab: React.FC = () => {
     } catch { /* silent */ }
   };
 
-  // â”€â”€ Drag & drop reordering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Drag-and-drop reordering
   const handleDragStart = (index: number) => {
     dragIndex.current = index;
     setDragging(index);
@@ -427,10 +518,20 @@ export const HeadersTab: React.FC = () => {
     setDragging(null);
     dragIndex.current = null;
     const orderedIds = rules.map(r => r.id);
-    void chrome.runtime.sendMessage({ type: 'REORDER_HEADER_RULES', payload: orderedIds });
+
+    void (async () => {
+      try {
+        const res = await chrome.runtime.sendMessage({ type: 'REORDER_HEADER_RULES', payload: orderedIds });
+        if (res?.success) {
+          setRules(res.data as HeaderRule[]);
+        }
+      } catch {
+        // silent
+      }
+    })();
   };
 
-  // â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Export
   const handleExportCurl = async () => {
     setExportOpen(false);
     try {
@@ -445,33 +546,43 @@ export const HeadersTab: React.FC = () => {
   return (
     <div className="flex flex-col h-full overflow-hidden max-w-[600px] mx-auto w-full">
 
-      {/* â”€â”€ Add rule form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Add rule form */}
       <div className="border-b border-gray-800 bg-gray-900/30 px-3 py-3 space-y-2 shrink-0">
         {/* Form header with template picker */}
         <div className="flex items-center justify-between mb-1">
           <p className="text-[10px] uppercase tracking-widest text-gray-600 font-medium select-none">
-            New rule
+            {editingRuleId ? `Edit rule #${editingRuleId}` : 'New rule'}
           </p>
-          <div ref={tplRef} className="relative">
-            <button
-              onClick={() => setTplOpen(p => !p)}
-              className="px-2 py-1 text-[11px] text-gray-500 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
-            >
-              Templates ▾
-            </button>
-            {tplOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 overflow-hidden">
-                {TEMPLATES.map(tpl => (
-                  <button
-                    key={tpl.label}
-                    onClick={() => applyTemplate(tpl)}
-                    className="w-full text-left px-3 py-2 text-[11px] text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors"
-                  >
-                    {tpl.label}
-                  </button>
-                ))}
-              </div>
+          <div className="flex items-center gap-2">
+            {editingRuleId && (
+              <button
+                onClick={handleCancelEdit}
+                className="px-2 py-1 text-[11px] text-gray-500 hover:text-gray-200 hover:bg-gray-800 rounded transition-colors"
+              >
+                Cancel
+              </button>
             )}
+            <div ref={tplRef} className="relative">
+              <button
+                onClick={() => setTplOpen(p => !p)}
+                className="px-2 py-1 text-[11px] text-gray-500 hover:text-blue-400 hover:bg-gray-800 rounded transition-colors"
+              >
+                Templates ▾
+              </button>
+              {tplOpen && (
+                <div className="absolute right-0 top-full mt-1 w-44 bg-gray-900 border border-gray-700 rounded shadow-xl z-50 overflow-hidden">
+                  {TEMPLATES.map(tpl => (
+                    <button
+                      key={tpl.label}
+                      onClick={() => applyTemplate(tpl)}
+                      className="w-full text-left px-3 py-2 text-[11px] text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors"
+                    >
+                      {tpl.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -487,7 +598,7 @@ export const HeadersTab: React.FC = () => {
         <TextInput
           value={form.urlFilter}
           onChange={v => patchForm('urlFilter', v)}
-          placeholder="URL filter â€” e.g. *://*.example.com/*"
+            placeholder="URL filter e.g. *://*.example.com/*"
           className="w-full"
         />
 
@@ -528,7 +639,27 @@ export const HeadersTab: React.FC = () => {
           />
         )}
 
-        {/* Row 5: live badge + toast + save button */}
+        {/* Row 5: scope */}
+        <div className="flex gap-2">
+          <Select
+            value={form.scopeMode}
+            onChange={v => patchForm('scopeMode', v as FormState['scopeMode'])}
+            options={[
+              { value: 'global', label: 'Global scope' },
+              { value: 'domain', label: 'Scoped domain' },
+            ]}
+          />
+          {form.scopeMode === 'domain' && (
+            <TextInput
+              value={form.scopeDomain}
+              onChange={v => patchForm('scopeDomain', v)}
+              placeholder={activeDomain || 'example.com'}
+              className="flex-1 min-w-0"
+            />
+          )}
+        </div>
+
+        {/* Row 6: live badge + toast + save button */}
         <div className="flex items-center justify-between gap-2 pt-0.5">
           <div className="flex items-center gap-2 min-w-0">
             {toast ? (
@@ -555,12 +686,12 @@ export const HeadersTab: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors shrink-0"
           >
             <IconPlus className="w-3 h-3" />
-            {saving ? 'Saving…' : 'Add rule'}
+            {saving ? 'Saving…' : editingRuleId ? 'Update rule' : 'Add rule'}
           </button>
         </div>
       </div>
 
-      {/* â”€â”€ Rule list header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Rule list header */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800 bg-gray-900/20 shrink-0">
         <span className="text-[10px] text-gray-600 uppercase tracking-widest font-medium select-none">
           {rules.length > 0 ? `Rules (${rules.length})` : 'Rules'}
@@ -586,7 +717,7 @@ export const HeadersTab: React.FC = () => {
         </div>
       </div>
 
-      {/* â”€â”€ Rule list (drag-sortable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Rule list (drag-sortable) */}
       <div
         className="flex-1 overflow-y-auto"
         onDragEnd={() => { setDragging(null); dragIndex.current = null; }}
@@ -602,6 +733,8 @@ export const HeadersTab: React.FC = () => {
               rule={r}
               index={i}
               dragging={dragging}
+              editing={editingRuleId === r.id}
+              onEdit={handleEdit}
               onToggle={id => { void handleToggle(id); }}
               onDelete={id => { void handleDelete(id); }}
               onDragStart={handleDragStart}

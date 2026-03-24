@@ -20,7 +20,14 @@
  *   - No value is ever written — this script is strictly read-only.
  */
 
-import type { StorageEntry, StorageScanResult, TokenHint, WebStorageArea } from '../types';
+import type {
+  ExtensionMessage,
+  ExtensionResponse,
+  StorageEntry,
+  StorageScanResult,
+  TokenHint,
+  WebStorageArea,
+} from '../types';
 import { isJwt } from '../utils/jwtUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,22 +188,48 @@ function performScan(): StorageScanResult {
  * because the content script does not need the background's acknowledgement.
  * The background caches the result; the popup requests it on demand.
  */
-function runScan(): void {
+async function runScan(): Promise<StorageScanResult | null> {
   try {
     const result = performScan();
 
-    // Only send if there is something to report — avoids unnecessary IPC noise
-    if (result.entries.length === 0) return;
-
-    // Fire-and-forget — intentionally not awaited
-    chrome.runtime.sendMessage({
+    await chrome.runtime.sendMessage({
       type:    'STORAGE_SCAN_RESULT',
       payload: result,
     });
+
+    return result;
   } catch {
     // Silent — content script must never crash or throw to the page
+    return null;
   }
 }
+
+chrome.runtime.onMessage.addListener(
+  (
+    message: ExtensionMessage,
+    _sender,
+    sendResponse: (response: ExtensionResponse<{ entries: number }>) => void,
+  ) => {
+    if (message.type !== 'RUN_STORAGE_SCAN') {
+      return false;
+    }
+
+    void (async () => {
+      const result = await runScan();
+      if (result) {
+        sendResponse({
+          success: true,
+          data: { entries: result.entries.length },
+        });
+        return;
+      }
+
+      sendResponse({ success: false, error: 'Storage scan failed.' });
+    })();
+
+    return true;
+  },
+);
 
 /**
  * Schedule the scan during a browser idle period so it never competes with
@@ -204,7 +237,7 @@ function runScan(): void {
  * do not expose `requestIdleCallback` (e.g. some WebExtension polyfills).
  */
 if (typeof requestIdleCallback === 'function') {
-  requestIdleCallback(() => { runScan(); }, { timeout: 3000 });
+  requestIdleCallback(() => { void runScan(); }, { timeout: 3000 });
 } else {
-  setTimeout(runScan, 200);
+  setTimeout(() => { void runScan(); }, 200);
 }

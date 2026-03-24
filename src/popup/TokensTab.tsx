@@ -251,6 +251,7 @@ export const TokensTab: React.FC<{
 }> = ({ initialToken, onConsumeToken }) => {
   const [scanResult, setScanResult]   = useState<StorageScanResult | null>(null);
   const [loading, setLoading]         = useState(true);
+  const [scanErr, setScanErr]         = useState<string | null>(null);
   const [manualRaw, setManualRaw]     = useState('');
   const [manualToken, setManualToken] = useState<TokenData | null>(null);
   const [manualErr, setManualErr]     = useState<string | null>(null);
@@ -270,9 +271,34 @@ export const TokensTab: React.FC<{
       const res = await chrome.runtime.sendMessage({ type: 'GET_STORAGE_TOKENS' });
       if (res?.success) {
         setScanResult(res.data as StorageScanResult | null);
+        setScanErr(null);
       }
     } catch { /* silent */ }
     finally { setLoading(false); }
+  }, []);
+
+  const refreshScan = useCallback(async () => {
+    setLoading(true);
+    setScanErr(null);
+
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'RUN_STORAGE_SCAN' });
+      if (!res?.success) {
+        setScanErr(res?.error ?? 'Failed to refresh scan results.');
+        return;
+      }
+
+      const cached = await chrome.runtime.sendMessage({ type: 'GET_STORAGE_TOKENS' });
+      if (cached?.success) {
+        setScanResult(cached.data as StorageScanResult | null);
+      } else {
+        setScanErr(cached?.error ?? 'Failed to load refreshed scan results.');
+      }
+    } catch {
+      setScanErr('Storage scan is not available on this tab.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
@@ -362,12 +388,14 @@ export const TokensTab: React.FC<{
         <span className="text-[10px] text-gray-600 select-none">
           {loading
             ? 'Loading…'
+            : scanErr
+              ? scanErr
             : scannedAt
               ? `Page scan at ${scannedAt} · ${storageViews.length} token${storageViews.length !== 1 ? 's' : ''} found`
               : 'No page scan available — navigate to a page to trigger scanning'}
         </span>
         <button
-          onClick={() => { void load(); }}
+          onClick={() => { void refreshScan(); }}
           title="Refresh scan results"
           className="p-1 rounded text-gray-600 hover:text-blue-400 hover:bg-gray-800 transition-colors"
         >

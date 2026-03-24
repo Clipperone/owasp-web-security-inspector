@@ -55,7 +55,7 @@ async function removeItem(key: string): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Returns all persisted header rules sorted by `priority` ascending.
+ * Returns all persisted header rules sorted by `priority` descending.
  * Returns an empty array when no rules have been saved yet.
  *
  * Sorting ensures the UI list and the declarativeNetRequest API always
@@ -65,7 +65,21 @@ export async function getRules(): Promise<HeaderRule[]> {
   const stored = await getItem<HeaderRule[]>(STORAGE_KEYS.HEADER_RULES);
   if (!Array.isArray(stored)) return [];
   // Return a new sorted array — never mutate the stored reference
-  return [...stored].sort((a, b) => a.priority - b.priority);
+  return [...stored].sort((a, b) => b.priority - a.priority);
+}
+
+/**
+ * Reassigns rule priorities from top to bottom so the first rule in the array
+ * has the highest DNR priority and the last rule has the lowest one.
+ */
+export function normalizeRulePriorities(rules: HeaderRule[]): HeaderRule[] {
+  const updatedAt = new Date().toISOString();
+
+  return rules.map((rule, index) => ({
+    ...rule,
+    priority: rules.length - index,
+    updatedAt,
+  }));
 }
 
 /**

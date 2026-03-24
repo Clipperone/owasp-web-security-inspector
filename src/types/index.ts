@@ -78,7 +78,7 @@ export interface HeaderModification {
 export interface HeaderRule {
   /** Unique numeric rule ID (required by the DNR API). */
   id: number;
-  /** Lower number = higher priority when rules conflict. */
+  /** Higher number = higher priority when rules conflict. */
   priority: number;
   /** Display name set by the user. */
   name: string;
@@ -172,6 +172,7 @@ export type MessageType =
   // Storage token inspection (content → background, popup → background)
   | 'STORAGE_SCAN_RESULT'   // content script pushes scan results
   | 'GET_STORAGE_TOKENS'    // popup requests cached results for active tab
+  | 'RUN_STORAGE_SCAN'      // popup asks the active tab content script to rescan storage
   // Tab info
   | 'GET_ACTIVE_TAB_INFO'
   // Live response header cache

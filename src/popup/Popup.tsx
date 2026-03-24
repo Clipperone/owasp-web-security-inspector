@@ -35,8 +35,10 @@ const ScopeToggle: React.FC = () => {
         onClick={() => setMode(isDomain ? 'global' : 'domain')}
         disabled={loading || !activeDomain}
         title={isDomain ? 'Switch to Global (all sites)' : `Restrict to ${activeDomain || 'current domain'}`}
-        className="relative flex h-4 w-7 items-center rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-        style={{ background: isDomain ? '#2563eb' : '#374151' }}
+        className={[
+          'relative flex h-4 w-7 items-center rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0',
+          isDomain ? 'bg-blue-600' : 'bg-gray-700',
+        ].join(' ')}
       >
         <span
           className={[

@@ -27,7 +27,9 @@ export function cookieId(c: chrome.cookies.Cookie): string {
  */
 export function unixToLocalInput(unix: number | undefined): string {
   if (!unix) return '';
-  return new Date(unix * 1000).toISOString().slice(0, 16);
+  const date = new Date(unix * 1000);
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
 /**

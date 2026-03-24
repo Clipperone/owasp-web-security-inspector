@@ -42,6 +42,7 @@ import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
 import {
   deleteRule,
   getRules,
+  normalizeRulePriorities,
   saveRule,
   toggleRule,
 } from '../utils/storageUtils';
@@ -124,7 +125,7 @@ function toModifyHeaderInfo(
  * ```
  * {
  *   id:       number                  (must be a positive integer ≥ 1)
- *   priority: number                  (lower = higher priority in DNR)
+ *   priority: number                  (higher = higher priority in DNR)
  *   condition: { urlFilter, ... }
  *   action: {
  *     type: "modifyHeaders",
@@ -234,11 +235,11 @@ chrome.webRequest.onHeadersReceived.addListener(
 chrome.runtime.onMessage.addListener(
   (
     message: ExtensionMessage,
-    _sender,
+    sender,
     sendResponse: (response: ExtensionResponse) => void,
   ) => {
     // Return `true` to keep the message channel open for async responses
-    handleMessage(message)
+    handleMessage(message, sender)
       .then(sendResponse)
       .catch((err: unknown) => {
         // Silent catch — never let an unhandled rejection crash the worker
@@ -256,6 +257,7 @@ chrome.runtime.onMessage.addListener(
  */
 async function handleMessage(
   message: ExtensionMessage,
+  sender: chrome.runtime.MessageSender,
 ): Promise<ExtensionResponse> {
   try {
     switch (message.type) {
@@ -320,9 +322,8 @@ async function handleMessage(
       // (cleared automatically when the browser session ends).
 
       case 'STORAGE_SCAN_RESULT': {
-        const result  = message.payload as StorageScanResult;
-        const [tab]   = await chrome.tabs.query({ active: true, currentWindow: true });
-        const tabId   = tab?.id ?? -1;
+        const result = message.payload as StorageScanResult;
+        const tabId = sender.tab?.id ?? await getFallbackTabId();
         const cacheKey = `storageScan:${tabId}`;
         // chrome.storage.session is ephemeral — no user data persists to disk
         await chrome.storage.session.set({ [cacheKey]: result });
@@ -337,18 +338,36 @@ async function handleMessage(
         const result   = (stored[cacheKey] as StorageScanResult | undefined) ?? null;
         return { success: true, data: result };
       }
+
+      case 'RUN_STORAGE_SCAN': {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id === undefined) {
+          return { success: false, error: 'No active tab available for storage scan.' };
+        }
+
+        try {
+          const response = await chrome.tabs.sendMessage(tab.id, { type: 'RUN_STORAGE_SCAN' });
+          return response as ExtensionResponse;
+        } catch {
+          return {
+            success: false,
+            error: 'Storage scan is not available on this tab.',
+          };
+        }
+      }
       // ── Rule reordering ─────────────────────────────────────────────────
 
       case 'REORDER_HEADER_RULES': {
         const orderedIds = message.payload as number[];
         const existing   = await getRules();
         const idToRule   = new Map(existing.map(r => [r.id, r]));
-        const reordered  = orderedIds
+        const reordered = orderedIds
           .map(id => idToRule.get(id))
           .filter((r): r is HeaderRule => r !== undefined);
-        await chrome.storage.local.set({ [STORAGE_KEYS.HEADER_RULES]: reordered });
-        await updateNetworkRules(reordered);
-        return { success: true, data: reordered };
+        const normalized = normalizeRulePriorities(reordered);
+        await chrome.storage.local.set({ [STORAGE_KEYS.HEADER_RULES]: normalized });
+        await updateNetworkRules(normalized);
+        return { success: true, data: normalized };
       }
 
       // ── Active tab info ─────────────────────────────────────────────────
@@ -394,3 +413,12 @@ async function handleMessage(
 
 // Required to satisfy isolatedModules when there are no top-level exports
 export type { CookieData };
+
+async function getFallbackTabId(): Promise<number> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab?.id ?? -1;
+  } catch {
+    return -1;
+  }
+}
