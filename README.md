@@ -9,7 +9,7 @@ A Chrome Extension (Manifest V3) for developers to inspect and manipulate **cook
 | Tab | What it does |
 |-----|-------------|
 | **Cookies** | List all cookies for the active page. Create, edit (name, value, domain, path, SameSite, expiry, Secure, HttpOnly flags), and delete cookies with inline confirmation. **Export** the visible cookie set as a `curl` command or a Netscape `cookies.txt` file (compatible with yt-dlp, wget, and curl). Cookies whose value is a JWT token show a **`JWT` badge**; clicking the badge instantly sends the value to the **Tokens** tab for analysis. A **Clear All** button (🗑) removes every cookie for the current site at once after an inline confirmation step. |
-| **Response Headers** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. Security-relevant headers (CSP, HSTS, X-Frame-Options, CORS, etc.) are highlighted with colour-coded badges. Filter requests by URL and expand any row to inspect the full header list. |
+| **Response Headers** | Shows live HTTP response headers captured as you browse. Auto-refreshes every 3 seconds. The tab captures top-level documents (`DOC`), embedded documents / iframes (`IFR`), and XHR/fetch traffic (`XHR`). An OWASP-aligned security summary highlights tracked headers on the primary response for the active tab, marks missing ones in red, and flags present-but-weak configurations in yellow. If the latest top-level document response is no longer available in cache, the tab falls back to an inferred primary response from the active host and labels it clearly. Each row shows URL, method, status code, resource type, and timestamp. Expand any row to inspect the full header list, the missing tracked headers for that request, and hover the badges to see the full header name. |
 | **Modify Headers** | Create declarativeNetRequest rules to add, set, append, or remove request/response headers on matching URLs. Toggle rules on/off, edit existing rules inline, or delete them without reloading the extension. Use the **Global / This Site** scope toggle as a default and override scope per rule with **Global scope** or **Scoped domain** in the form. Apply **Quick Templates** (e.g. Bearer Token, CORS Bypass, Debug Header) with a single click. See a **live preview badge** of the matching URL before saving. **Reorder rules** by drag and drop. **Export** request-header rules as a `curl -H` command. |
 | **Tokens** | **Real-time JWT decoder**: paste a token and it decodes instantly. Displays three collapsible sections (**Header**, **Payload**, **Signature**) with colour-coded JSON syntax highlighting. `exp`, `iat`, and `nbf` claims show the human-readable local date alongside the unix value. A prominent **⚠️ Token Expired** banner appears when `exp` is in the past. Also surfaces valid JWTs found automatically by the page scanner in `localStorage` / `sessionStorage`, and the refresh button triggers a real rescan of the active tab. |
 
@@ -190,8 +190,9 @@ The extension automatically scans the page's web storage on load. Any valid JWT 
 #### Inspect live HTTP response headers
 
 1. With the extension open, browse or reload a page — the **Response Headers** tab captures headers as requests complete.
-2. Each row shows URL, method, status code, resource type, and timestamp.
-3. Click a row to expand the full header list.
+2. A summary banner at the top shows the primary response for the current tab and which tracked security headers are aligned with OWASP guidance, missing, or present with warnings.
+3. Rows are tagged by response type: `DOC` for the top-level document, `IFR` for embedded documents / iframes, and `XHR` for XHR/fetch traffic.
+4. Click a row to expand the full header list and inspect the missing tracked headers and OWASP warnings for that request.
 
 #### Check security posture of a site
 
@@ -204,7 +205,7 @@ Security-relevant headers are highlighted with colour-coded badges:
 | 🔴 | `X-Frame-Options` | Clickjacking protection |
 | 🔵 | `Access-Control-Allow-Origin` | CORS policy |
 
-Missing headers are immediately visible by their absence — useful for quick security reviews.
+Tracked missing headers are surfaced explicitly in red, while present headers with values that differ from OWASP recommendations are flagged in yellow. Hover any badge to see the full header name. When the top-level document response is no longer available in cache, the summary falls back to an inferred primary response from the active host so the tab still provides a useful security snapshot.
 
 #### Filter by URL
 
@@ -254,7 +255,7 @@ Use the search box in the **Response Headers** tab to show only requests matchin
 | `declarativeNetRequest` + `declarativeNetRequestWithHostAccess` | Modify HTTP headers via DNR rules |
 | `storage` | Persist header rules and settings in `chrome.storage.local`; cache response headers in `chrome.storage.session` |
 | `activeTab` | Query the active tab URL (used by the Cookies and Modify Headers tabs) |
-| `webRequest` | Intercept HTTP responses to populate the Response Headers tab cache |
+| `webRequest` | Intercept `main_frame`, `sub_frame`, and XHR/fetch responses to populate the Response Headers tab cache |
 | `host_permissions: <all_urls>` | Required for cross-origin cookie and header access |
 
 ---

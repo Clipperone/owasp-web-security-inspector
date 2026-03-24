@@ -219,12 +219,23 @@ chrome.webRequest.onHeadersReceived.addListener(
           })) ?? [],
         };
 
-        const updated = [entry, ...prev].slice(0, TAB_HEADERS_MAX);
+        const latestDocument = details.type === 'main_frame'
+          ? entry
+          : prev.find(request => request.resourceType === 'main_frame');
+
+        const recentRequests = [
+          ...(details.type === 'main_frame' ? [] : [entry]),
+          ...prev.filter(request => request.resourceType !== 'main_frame'),
+        ].slice(0, latestDocument ? TAB_HEADERS_MAX - 1 : TAB_HEADERS_MAX);
+
+        const updated = latestDocument
+          ? [latestDocument, ...recentRequests]
+          : recentRequests;
         await chrome.storage.session.set({ [key]: updated });
       } catch { /* silent */ }
     })();
   },
-  { urls: ['<all_urls>'], types: ['main_frame', 'xmlhttprequest'] },
+  { urls: ['<all_urls>'], types: ['main_frame', 'sub_frame', 'xmlhttprequest'] },
   ['responseHeaders'],
 );
 

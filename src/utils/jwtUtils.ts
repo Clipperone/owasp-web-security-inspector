@@ -240,7 +240,6 @@ function decodeSegment<T>(segment: string): SegmentResult<T> {
     );
 
     // Step 3 & 4: binary → UTF-8 string
-    // eslint-disable-next-line no-restricted-globals
     const jsonString = decodeURIComponent(escape(atob(padded)));
 
     // Step 5: parse JSON
