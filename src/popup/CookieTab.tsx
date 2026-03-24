@@ -49,6 +49,45 @@ function newDraft(domain: string): Draft {
   };
 }
 
+function isPartitionedCookie(cookie: chrome.cookies.Cookie | null): boolean {
+  const candidate = cookie as (chrome.cookies.Cookie & { partitionKey?: unknown }) | null;
+  return Boolean(candidate && candidate.partitionKey != null);
+}
+
+function getCookieValidationError(
+  draft: Draft,
+  original: chrome.cookies.Cookie | null,
+  tabDomain: string,
+): string | null {
+  const name = draft.name.trim();
+  const domain = draft.domain.trim();
+  const path = draft.path.trim() || '/';
+  const preservesHostOnlyDomain = Boolean(original?.hostOnly && domain === original.domain);
+  const omitDomainAttribute = !domain || preservesHostOnlyDomain;
+  const effectiveDomain = domain || tabDomain;
+
+  if (!name) return 'Cookie name is required.';
+  if (!effectiveDomain) return 'Cookie domain is required.';
+  if (draft.sameSite === 'no_restriction' && !draft.secure) {
+    return 'SameSite=None requires the Secure flag to be enabled.';
+  }
+  if (name.startsWith('__Secure-') && !draft.secure) {
+    return '__Secure- cookies must keep the Secure flag enabled.';
+  }
+  if (name.startsWith('__Host-')) {
+    if (!draft.secure) return '__Host- cookies must keep the Secure flag enabled.';
+    if (path !== '/') return '__Host- cookies must use the root path /.';
+    if (!omitDomainAttribute) {
+      return '__Host- cookies cannot include a Domain attribute. Clear the domain field to keep them host-only.';
+    }
+  }
+  if (isPartitionedCookie(original) && !draft.secure) {
+    return 'Partitioned cookies must keep the Secure flag enabled.';
+  }
+
+  return null;
+}
+
 // ── SVG icons ──────────────────────────────────────────────────────────────────
 const IconRefresh: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -229,7 +268,7 @@ export const CookieTab: React.FC<{
   // ── Delete ────────────────────────────────────────────────────────────────────
   const handleDelete = async (c: chrome.cookies.Cookie) => {
     try {
-      await chrome.cookies.remove({ url: cookieUrl(c.domain, c.path, c.secure), name: c.name });
+      await chrome.cookies.remove({ url: cookieUrl(c.domain, c.path, c.secure, tabUrl), name: c.name });
     } catch {
       // silent
     } finally {
@@ -257,13 +296,21 @@ export const CookieTab: React.FC<{
     setDraft(prev => (prev ? { ...prev, [key]: value } : null));
   };
 
+  const validationErr = draft ? getCookieValidationError(draft, original, tabDomain) : null;
+  const formError = validationErr ?? saveErr;
+  const saveDisabled = saving || Boolean(validationErr);
+
   const handleSave = async () => {
     if (!draft) return;
-    if (!draft.name.trim()) { setSaveErr('Cookie name is required.'); return; }
-    if (draft.sameSite === 'no_restriction' && !draft.secure) {
-      setSaveErr('SameSite=None requires the Secure flag to be enabled.');
-      return;
-    }
+    const validationError = getCookieValidationError(draft, original, tabDomain);
+    const name = draft.name.trim();
+    const domain = draft.domain.trim();
+    const path = draft.path.trim() || '/';
+    const preservesHostOnlyDomain = Boolean(original?.hostOnly && domain === original.domain);
+    const omitDomainAttribute = !domain || preservesHostOnlyDomain;
+    const effectiveDomain = domain || tabDomain;
+
+    if (validationError) { setSaveErr(validationError); return; }
     setSaving(true);
     setSaveErr(null);
     try {
@@ -273,18 +320,17 @@ export const CookieTab: React.FC<{
         (original.name !== draft.name || original.domain !== draft.domain || original.path !== draft.path)
       ) {
         await chrome.cookies.remove({
-          url:  cookieUrl(original.domain, original.path, original.secure),
+          url:  cookieUrl(original.domain, original.path, original.secure, tabUrl),
           name: original.name,
         });
       }
 
-      const effectiveDomain = draft.domain || tabDomain;
       await chrome.cookies.set({
-        url:      cookieUrl(effectiveDomain, draft.path, draft.secure),
-        name:     draft.name,
+        url:      cookieUrl(effectiveDomain, path, draft.secure, tabUrl),
+        name,
         value:    draft.value,
-        domain:   draft.domain || undefined,
-        path:     draft.path || '/',
+        domain:   omitDomainAttribute ? undefined : domain,
+        path,
         secure:   draft.secure,
         httpOnly: draft.httpOnly,
         sameSite: draft.sameSite,
@@ -305,7 +351,7 @@ export const CookieTab: React.FC<{
     setConfirmClearAll(false);
     await Promise.allSettled(
       cookies.map(c =>
-        chrome.cookies.remove({ url: cookieUrl(c.domain, c.path, c.secure), name: c.name }),
+        chrome.cookies.remove({ url: cookieUrl(c.domain, c.path, c.secure, tabUrl), name: c.name }),
       ),
     );
     void load();
@@ -507,10 +553,10 @@ export const CookieTab: React.FC<{
                           <Toggle label="HttpOnly" checked={draft.httpOnly} onChange={v => patch('httpOnly', v)} hint="No JS access" />
                         </div>
                       </div>
-                      {saveErr && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{saveErr}</p>}
+                      {formError && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{formError}</p>}
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={closeEdit} className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
-                        <button onClick={() => { void handleSave(); }} disabled={saving} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Create'}</button>
+                        <button onClick={() => { void handleSave(); }} disabled={saveDisabled} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Create'}</button>
                       </div>
                     </div>
                   </td>
@@ -632,10 +678,10 @@ export const CookieTab: React.FC<{
                                 <Toggle label="HttpOnly" checked={draft.httpOnly} onChange={v => patch('httpOnly', v)} hint="No JS access" />
                               </div>
                             </div>
-                            {saveErr && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{saveErr}</p>}
+                            {formError && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{formError}</p>}
                             <div className="flex items-center justify-end gap-2">
                               <button onClick={closeEdit} className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
-                              <button onClick={() => { void handleSave(); }} disabled={saving} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Update'}</button>
+                              <button onClick={() => { void handleSave(); }} disabled={saveDisabled} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Update'}</button>
                             </div>
                           </div>
                         </td>

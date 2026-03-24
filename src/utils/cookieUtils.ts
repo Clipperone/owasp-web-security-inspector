@@ -6,10 +6,25 @@
 /**
  * Builds the URL required by chrome.cookies APIs from cookie attributes.
  * Leading dots on the domain are stripped (they denote host-only cookies).
+ * When a page URL is available, its protocol is preferred over the cookie's
+ * Secure flag so existing HTTPS pages can still update non-secure cookies.
  */
-export function cookieUrl(domain: string, path: string, secure: boolean): string {
+export function cookieUrl(domain: string, path: string, secure: boolean, pageUrl?: string): string {
   const host = domain.replace(/^\.+/, '');
-  return `${secure ? 'https' : 'http'}://${host}${path || '/'}`;
+  let protocol = secure ? 'https' : 'http';
+
+  if (pageUrl) {
+    try {
+      const pageProtocol = new URL(pageUrl).protocol;
+      if (pageProtocol === 'https:' || pageProtocol === 'http:') {
+        protocol = pageProtocol.slice(0, -1);
+      }
+    } catch {
+      // Ignore invalid page URLs and fall back to the cookie security flag.
+    }
+  }
+
+  return `${protocol}://${host}${path || '/'}`;
 }
 
 /**
