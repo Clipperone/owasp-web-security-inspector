@@ -1,21 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { cookieUrl, cookieId, unixToLocalInput, localInputToUnix } from '../utils/cookieUtils';
+import { cookieUrl, cookieId } from '../utils/cookieUtils';
 import { exportToCurl, exportToNetscape } from '../utils/exporter';
 import { isJwt } from '../utils/jwtUtils';
+import { CookieEditorForm, type CookieDraft } from './CookieEditorForm';
+import { useDismissOnOutsideClick } from './useDismissOnOutsideClick';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type SameSite = `${chrome.cookies.SameSiteStatus}`;
-
-interface Draft {
-  name: string;
-  value: string;
-  domain: string;
-  path: string;
-  secure: boolean;
-  httpOnly: boolean;
-  sameSite: SameSite;
-  expirationDate: number | undefined;
-}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -23,7 +13,7 @@ function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
-function toDraft(c: chrome.cookies.Cookie): Draft {
+function toDraft(c: chrome.cookies.Cookie): CookieDraft {
   return {
     name:           c.name,
     value:          c.value,
@@ -36,7 +26,7 @@ function toDraft(c: chrome.cookies.Cookie): Draft {
   };
 }
 
-function newDraft(domain: string): Draft {
+function newDraft(domain: string): CookieDraft {
   return {
     name:           '',
     value:          '',
@@ -55,7 +45,7 @@ function isPartitionedCookie(cookie: chrome.cookies.Cookie | null): boolean {
 }
 
 function getCookieValidationError(
-  draft: Draft,
+  draft: CookieDraft,
   original: chrome.cookies.Cookie | null,
   tabDomain: string,
 ): string | null {
@@ -125,73 +115,6 @@ const IconX: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// ── Form primitives ────────────────────────────────────────────────────────────
-const Field: React.FC<{
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}> = ({ label, required, children }) => (
-  <div className="flex flex-col gap-1">
-    <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium select-none">
-      {label}
-      {required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    {children}
-  </div>
-);
-
-const TextInput: React.FC<{
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  mono?: boolean;
-}> = ({ value, onChange, placeholder, mono }) => (
-  <input
-    type="text"
-    value={value}
-    onChange={e => onChange(e.target.value)}
-    placeholder={placeholder}
-    className={[
-      'w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded',
-      'text-gray-300 placeholder-gray-600',
-      'focus:outline-none focus:border-blue-600 transition-colors',
-      mono ? 'font-mono' : '',
-    ].join(' ')}
-  />
-);
-
-const Toggle: React.FC<{
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  hint?: string;
-}> = ({ label, checked, onChange, hint }) => (
-  <label className="flex items-center gap-2 cursor-pointer group" title={hint}>
-    <input
-      type="checkbox"
-      checked={checked}
-      onChange={e => onChange(e.target.checked)}
-      className="sr-only"
-    />
-    <div
-      className={[
-        'relative flex h-4 w-7 items-center rounded-full transition-colors duration-200 shrink-0',
-        checked ? 'bg-blue-600' : 'bg-gray-700',
-      ].join(' ')}
-    >
-      <span
-        className={[
-          'absolute h-3 w-3 rounded-full bg-white shadow transition-transform duration-200',
-          checked ? 'translate-x-3.5' : 'translate-x-0.5',
-        ].join(' ')}
-      />
-    </div>
-    <span className="text-[11px] text-gray-400 group-hover:text-gray-300 transition-colors select-none">
-      {label}
-    </span>
-  </label>
-);
-
 // ── CookieTab ──────────────────────────────────────────────────────────────────
 export const CookieTab: React.FC<{
   onSendToTokens?: (value: string) => void;
@@ -204,7 +127,7 @@ export const CookieTab: React.FC<{
   const [filter, setFilter]       = useState('');
   const [sortAsc, setSortAsc]     = useState(true);
 
-  const [draft, setDraft]                   = useState<Draft | null>(null);
+  const [draft, setDraft]                   = useState<CookieDraft | null>(null);
   const [original, setOriginal]             = useState<chrome.cookies.Cookie | null>(null);
   const [saveErr, setSaveErr]               = useState<string | null>(null);
   const [saving, setSaving]                 = useState(false);
@@ -240,14 +163,8 @@ export const CookieTab: React.FC<{
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    if (!exportOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [exportOpen]);
+  const closeExportMenu = useCallback(() => setExportOpen(false), []);
+  useDismissOnOutsideClick(exportRef, closeExportMenu, exportOpen);
 
   // ── Derived list ──────────────────────────────────────────────────────────────
   const visible = [...cookies]
@@ -292,7 +209,7 @@ export const CookieTab: React.FC<{
     setSaveErr(null);
   };
 
-  const patch = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+  const patch = <K extends keyof CookieDraft>(key: K, value: CookieDraft[K]) => {
     setDraft(prev => (prev ? { ...prev, [key]: value } : null));
   };
 
@@ -516,48 +433,18 @@ export const CookieTab: React.FC<{
               {editingId === '__new__' && draft && (
                 <tr>
                   <td colSpan={5} className="p-0 border-b border-blue-900/50">
-                    <div className="border-l-2 border-blue-600/60 bg-gray-950/60 px-4 py-3 space-y-2.5">
-                      <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">New Cookie</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="Name" required>
-                          <TextInput value={draft.name} onChange={v => patch('name', v)} placeholder="cookie_name" mono />
-                        </Field>
-                        <Field label="Value">
-                          <TextInput value={draft.value} onChange={v => patch('value', v)} placeholder="cookie_value" mono />
-                        </Field>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3">
-                        <Field label="Domain">
-                          <TextInput value={draft.domain} onChange={v => patch('domain', v)} placeholder=".example.com" mono />
-                        </Field>
-                        <Field label="Path">
-                          <TextInput value={draft.path} onChange={v => patch('path', v || '/')} placeholder="/" mono />
-                        </Field>
-                        <Field label="SameSite">
-                          <select value={draft.sameSite} onChange={e => patch('sameSite', e.target.value as SameSite)} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors">
-                            <option value="unspecified">Unspecified</option>
-                            <option value="lax">Lax</option>
-                            <option value="strict">Strict</option>
-                            <option value="no_restriction">None</option>
-                          </select>
-                        </Field>
-                      </div>
-                      <div className="flex items-end gap-4">
-                        <div className="flex-1">
-                          <Field label="Expires (session if empty)">
-                            <input type="datetime-local" value={unixToLocalInput(draft.expirationDate)} onChange={e => patch('expirationDate', localInputToUnix(e.target.value))} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors" />
-                          </Field>
-                        </div>
-                        <div className="flex items-center gap-4 pb-0.5">
-                          <Toggle label="Secure" checked={draft.secure} onChange={v => patch('secure', v)} hint="HTTPS only" />
-                          <Toggle label="HttpOnly" checked={draft.httpOnly} onChange={v => patch('httpOnly', v)} hint="No JS access" />
-                        </div>
-                      </div>
-                      {formError && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{formError}</p>}
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={closeEdit} className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
-                        <button onClick={() => { void handleSave(); }} disabled={saveDisabled} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Create'}</button>
-                      </div>
+                    <div className="border-l-2 border-blue-600/60 bg-gray-950/60 px-4 py-3">
+                      <CookieEditorForm
+                        title="New Cookie"
+                        draft={draft}
+                        onPatch={patch}
+                        formError={formError}
+                        saveDisabled={saveDisabled}
+                        saving={saving}
+                        submitLabel="Create"
+                        onCancel={closeEdit}
+                        onSave={() => { void handleSave(); }}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -642,47 +529,17 @@ export const CookieTab: React.FC<{
                     {isEditing && draft && (
                       <tr>
                         <td colSpan={5} className="p-0 border-b border-blue-900/50">
-                          <div className="border-l-2 border-blue-600/60 bg-gray-950/60 px-4 py-3 space-y-2.5">
-                            <div className="grid grid-cols-2 gap-3">
-                              <Field label="Name" required>
-                                <TextInput value={draft.name} onChange={v => patch('name', v)} placeholder="cookie_name" mono />
-                              </Field>
-                              <Field label="Value">
-                                <TextInput value={draft.value} onChange={v => patch('value', v)} placeholder="cookie_value" mono />
-                              </Field>
-                            </div>
-                            <div className="grid grid-cols-3 gap-3">
-                              <Field label="Domain">
-                                <TextInput value={draft.domain} onChange={v => patch('domain', v)} placeholder=".example.com" mono />
-                              </Field>
-                              <Field label="Path">
-                                <TextInput value={draft.path} onChange={v => patch('path', v || '/')} placeholder="/" mono />
-                              </Field>
-                              <Field label="SameSite">
-                                <select value={draft.sameSite} onChange={e => patch('sameSite', e.target.value as SameSite)} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors">
-                                  <option value="unspecified">Unspecified</option>
-                                  <option value="lax">Lax</option>
-                                  <option value="strict">Strict</option>
-                                  <option value="no_restriction">None</option>
-                                </select>
-                              </Field>
-                            </div>
-                            <div className="flex items-end gap-4">
-                              <div className="flex-1">
-                                <Field label="Expires (session if empty)">
-                                  <input type="datetime-local" value={unixToLocalInput(draft.expirationDate)} onChange={e => patch('expirationDate', localInputToUnix(e.target.value))} className="w-full px-2 py-1.5 text-[11px] bg-gray-800 border border-gray-700 rounded text-gray-300 focus:outline-none focus:border-blue-600 transition-colors" />
-                                </Field>
-                              </div>
-                              <div className="flex items-center gap-4 pb-0.5">
-                                <Toggle label="Secure" checked={draft.secure} onChange={v => patch('secure', v)} hint="HTTPS only" />
-                                <Toggle label="HttpOnly" checked={draft.httpOnly} onChange={v => patch('httpOnly', v)} hint="No JS access" />
-                              </div>
-                            </div>
-                            {formError && <p className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">{formError}</p>}
-                            <div className="flex items-center justify-end gap-2">
-                              <button onClick={closeEdit} className="px-3 py-1.5 text-[11px] text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
-                              <button onClick={() => { void handleSave(); }} disabled={saveDisabled} className="px-4 py-1.5 text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors">{saving ? 'Saving…' : 'Update'}</button>
-                            </div>
+                          <div className="border-l-2 border-blue-600/60 bg-gray-950/60 px-4 py-3">
+                            <CookieEditorForm
+                              draft={draft}
+                              onPatch={patch}
+                              formError={formError}
+                              saveDisabled={saveDisabled}
+                              saving={saving}
+                              submitLabel="Update"
+                              onCancel={closeEdit}
+                              onSave={() => { void handleSave(); }}
+                            />
                           </div>
                         </td>
                       </tr>

@@ -97,38 +97,6 @@ Supportare meglio debugging e test manuali ripetibili.
 
 - L'estensione aiuta a confrontare rapidamente prima e dopo di una modifica.
 
-## Fase 13 - Estrazione componenti e hook piccoli
-
-### Obiettivo
-
-Ridurre la complessita' dei tab piu' grandi senza riscrivere l'interfaccia.
-
-### Scope
-
-- Estrarre solo parti stabili da CookieTab e HeadersTab.
-- Evitare refactor esteso in un colpo solo.
-
-### File attesi
-
-- `src/popup/CookieTab.tsx`
-- `src/popup/HeadersTab.tsx`
-- nuovi componenti o hook in `src/popup/`
-
-### Modifiche previste
-
-- Estrazione di row component, toolbar component o hook locali.
-- Nessuna modifica funzionale rilevante.
-
-### Validazione
-
-1. Regressione manuale completa dei tab interessati.
-2. `npm run lint`
-3. `npm run build`
-
-### Done when
-
-- I file principali sono piu' piccoli e leggibili senza regressioni.
-
 ## Fase 14 - Test unitari dei moduli puri
 
 ### Obiettivo
@@ -169,8 +137,7 @@ Eseguire anche il comando test introdotto in questa fase.
 
 1. Fase 9
 2. Fase 10
-3. Fase 13
-4. Fase 14
+3. Fase 14
 
 ## Regola pratica per non fare modifiche massive
 
