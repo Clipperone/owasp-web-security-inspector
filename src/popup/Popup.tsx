@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
+import { AssessmentTab } from './AssessmentTab';
 import { CookieTab } from './CookieTab';
 import { CurrentHeadersTab } from './CurrentHeadersTab';
 import { HeadersTab } from './HeadersTab';
 import { TokensTab } from './TokensTab';
 
-type TabId = 'cookies' | 'headers' | 'tokens' | 'response';
+type TabId = 'assessment' | 'cookies' | 'headers' | 'tokens' | 'response';
 
 const TABS: { id: TabId; label: string }[] = [
+  { id: 'assessment', label: 'Assessment'       },
   { id: 'cookies',  label: 'Cookies'          },
   { id: 'response', label: 'Response Headers' },
   { id: 'headers',  label: 'Modify Headers'   },
@@ -14,7 +16,7 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 export const Popup: React.FC = () => {
-  const [active, setActive]         = useState<TabId>('cookies');
+  const [active, setActive]         = useState<TabId>('assessment');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
 
   const sendToTokens = (value: string) => {
@@ -65,6 +67,7 @@ export const Popup: React.FC = () => {
 
       {/* ── Panel area ─────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-hidden">
+        {active === 'assessment' && <AssessmentTab />}
         {active === 'cookies'  && <CookieTab onSendToTokens={sendToTokens} />}
         {active === 'headers'  && <HeadersTab />}
         {active === 'tokens'   && <TokensTab initialToken={pendingToken} onConsumeToken={() => setPendingToken(null)} />}

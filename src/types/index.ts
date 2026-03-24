@@ -169,6 +169,32 @@ export interface CachedRequest {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Assessment types  (aggregated OWASP-oriented findings in the popup)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AssessmentSeverity = 'high' | 'medium' | 'low' | 'info';
+
+export type AssessmentCategory = 'cookies' | 'tokens' | 'headers' | 'storage';
+
+export type CookieAssessmentCategory = 'session/auth' | 'csrf' | 'preference' | 'analytics/other';
+
+export interface AssessmentFinding {
+  /** Stable ID used for React keys and future export/diff support. */
+  id: string;
+  category: AssessmentCategory;
+  severity: AssessmentSeverity;
+  title: string;
+  summary: string;
+  evidence: string;
+  remediation: string;
+}
+
+export interface CookieAssessmentSummary {
+  counts: Record<CookieAssessmentCategory, number>;
+  criticalCookies: string[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Messaging types  (popup ↔ background ↔ content)
 // ─────────────────────────────────────────────────────────────────────────────
 
