@@ -185,6 +185,7 @@ export interface AssessmentFinding {
   severity: AssessmentSeverity;
   title: string;
   summary: string;
+  whyItMatters?: string;
   evidence: string;
   remediation: string;
 }
@@ -192,6 +193,24 @@ export interface AssessmentFinding {
 export interface CookieAssessmentSummary {
   counts: Record<CookieAssessmentCategory, number>;
   criticalCookies: string[];
+}
+
+export interface SetCookieAssessmentSummary {
+  observedCount: number;
+  sensitiveObservedCount: number;
+  relevantRequestCount: number;
+  observedNames: string[];
+  persistedSensitiveNames: string[];
+}
+
+export type TokenAssessmentOrigin = 'cookie' | 'localStorage' | 'sessionStorage' | 'manual';
+
+export interface TokenAssessmentSummary {
+  observedCount: number;
+  jwtCount: number;
+  opaqueCount: number;
+  counts: Record<TokenAssessmentOrigin, number>;
+  labels: string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

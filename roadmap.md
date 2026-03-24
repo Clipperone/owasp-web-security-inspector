@@ -119,6 +119,11 @@ Rendere la valutazione cookie utile in ottica session management review e non so
 
 ## Fase 2 - Parsing e Analisi Reale di Set-Cookie
 
+### Stato
+
+- completata la parte tecnica della fase 2
+- resta consigliata la verifica manuale su login flow, callback OAuth e API di refresh sessione
+
 ### Obiettivo
 
 Valutare ciò che il server consegna al browser, non solo ciò che resta persistito.
@@ -147,7 +152,19 @@ Valutare ciò che il server consegna al browser, non solo ciò che resta persist
 - visione server-side observable più affidabile
 - riduzione del mismatch tra response e cookie store
 
+### Risultato
+
+- analisi `Set-Cookie` applicata alle response rilevanti dello stesso host: document, callback/auth flow e API session-related
+- finding aggiuntivi per `Set-Cookie` sensibili senza `Secure`, senza `HttpOnly`, senza `SameSite` e per `SameSite=None` senza `Secure`
+- riepilogo separato nella tab `Assessment` tra cookie osservati nelle response e cookie presenti nel browser jar
+- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
+
 ## Fase 3 - Header Assessment Esteso
+
+### Stato
+
+- completata la parte tecnica della fase 3
+- resta consigliata la verifica manuale su document response, logout flow e response CORS credenziali
 
 ### Obiettivo
 
@@ -181,7 +198,20 @@ Estendere la copertura dei response headers davvero utili per una review OWASP/b
 - assessment header più credibile e meno superficiale
 - migliore utilità per revisione di login page e app autenticata
 
+### Risultato
+
+- valutazione estesa di `Cache-Control`, `Clear-Site-Data`, `Access-Control-Allow-Credentials`, `Vary: Origin`, `Server` e `X-Powered-By`
+- distinzione più esplicita tra header mancanti, header deboli e casi non applicabili nel traffico catturato
+- warning HSTS più precisi su `max-age`, `includeSubDomains` e `preload`
+- nuovo blocco `Why it matters` per i finding header nella tab `Assessment` e nel report Markdown
+- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
+
 ## Fase 4 - Token e JWT Risk Assessment
+
+### Stato
+
+- completata la parte tecnica della fase 4
+- resta consigliata la verifica manuale su token in cookie, `localStorage`, `sessionStorage` e input manuale nella tab Tokens
 
 ### Obiettivo
 
@@ -215,6 +245,14 @@ Passare dal semplice decode JWT alla valutazione del rischio lato browser.
 
 - lettura più utile dei token reali
 - chiara distinzione tra decode e trust verification
+
+### Risultato
+
+- classificazione dei token osservati per origine: `cookie`, `localStorage`, `sessionStorage`, con preview separata per `manual input`
+- finding aggiuntivi per JWT con `alg=none`, `exp` assente, lifetime lunga, claim sensibili o payload eccessivo, token scaduto ancora presente nel contesto di review
+- finding per token opachi non-JWT in storage browser e osservazione informativa per token-like cookie values
+- nuova sezione `Token summary` nella tab `Assessment` e nuovo blocco `Risk preview` nella tab `Tokens` per l'input manuale
+- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
 
 ## Fase 5 - Snapshot e Diff
 

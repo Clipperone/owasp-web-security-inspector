@@ -5,9 +5,11 @@ import type {
   AssessmentFinding,
   CachedRequest,
   CookieAssessmentCategory,
+  SetCookieAssessmentSummary,
   StorageScanResult,
+  TokenAssessmentOrigin,
 } from '../types';
-import { buildAssessmentFindings, getCookieAssessmentSummary, getFindingCounts } from '../utils/assessment';
+import { buildAssessmentFindings, getCookieAssessmentSummary, getFindingCounts, getSetCookieAssessmentSummary, getTokenAssessmentSummary } from '../utils/assessment';
 
 const CATEGORY_LABELS: Record<AssessmentCategory, string> = {
   cookies: 'Cookies',
@@ -21,6 +23,13 @@ const COOKIE_CATEGORY_LABELS: Record<CookieAssessmentCategory, string> = {
   csrf: 'CSRF',
   preference: 'Preference',
   'analytics/other': 'Analytics/Other',
+};
+
+const TOKEN_ORIGIN_LABELS: Record<TokenAssessmentOrigin, string> = {
+  cookie: 'Cookie',
+  localStorage: 'localStorage',
+  sessionStorage: 'sessionStorage',
+  manual: 'Manual',
 };
 
 function severityClasses(severity: AssessmentFinding['severity']): string {
@@ -111,6 +120,14 @@ export const AssessmentTab: React.FC = () => {
 
   const counts = useMemo(() => getFindingCounts(findings), [findings]);
   const cookieSummary = useMemo(() => getCookieAssessmentSummary(cookies, tabInfo?.url ?? '/'), [cookies, tabInfo?.url]);
+  const setCookieSummary: SetCookieAssessmentSummary = useMemo(
+    () => getSetCookieAssessmentSummary(tabInfo?.url ?? '/', requests, cookies),
+    [cookies, requests, tabInfo?.url],
+  );
+  const tokenSummary = useMemo(
+    () => getTokenAssessmentSummary(cookies, scanResult?.entries ?? []),
+    [cookies, scanResult?.entries],
+  );
   const sessionAuthCookieCount = cookieSummary.counts['session/auth'];
   const csrfCookieCount = cookieSummary.counts.csrf;
   const visibleFindings = useMemo(() => {
@@ -129,6 +146,11 @@ export const AssessmentTab: React.FC = () => {
       `Cookies observed: ${cookies.length}`,
       `Session/Auth cookies: ${sessionAuthCookieCount}`,
       `CSRF cookies: ${csrfCookieCount}`,
+      `Set-Cookie observed on responses: ${setCookieSummary.observedCount}`,
+      `Relevant Set-Cookie responses: ${setCookieSummary.relevantRequestCount}`,
+      `Token candidates observed: ${tokenSummary.observedCount}`,
+      `JWT candidates: ${tokenSummary.jwtCount}`,
+      `Opaque token candidates: ${tokenSummary.opaqueCount}`,
       `Storage entries observed: ${scanResult?.entries.length ?? 0}`,
       `Captured requests: ${requests.length}`,
       `Applied filter: ${filter}`,
@@ -151,6 +173,9 @@ export const AssessmentTab: React.FC = () => {
         lines.push(`${index + 1}. [${finding.severity.toUpperCase()}] ${finding.title}`);
         lines.push(`Category: ${CATEGORY_LABELS[finding.category]}`);
         lines.push(`Summary: ${finding.summary}`);
+        if (finding.whyItMatters) {
+          lines.push(`Why it matters: ${finding.whyItMatters}`);
+        }
         lines.push(`Evidence: ${finding.evidence}`);
         lines.push(`Remediation: ${finding.remediation}`);
         lines.push('');
@@ -158,7 +183,7 @@ export const AssessmentTab: React.FC = () => {
     }
 
     return lines.join('\n');
-  }, [cookies.length, csrfCookieCount, filter, requests.length, scanResult?.entries.length, sessionAuthCookieCount, tabInfo?.url, visibleCounts.high, visibleCounts.info, visibleCounts.low, visibleCounts.medium, visibleFindings]);
+  }, [cookies.length, csrfCookieCount, filter, requests.length, scanResult?.entries.length, sessionAuthCookieCount, setCookieSummary.observedCount, setCookieSummary.relevantRequestCount, tabInfo?.url, tokenSummary.jwtCount, tokenSummary.observedCount, tokenSummary.opaqueCount, visibleCounts.high, visibleCounts.info, visibleCounts.low, visibleCounts.medium, visibleFindings]);
 
   const copyReport = useCallback(async (format: 'markdown' | 'json') => {
     const payload = format === 'markdown'
@@ -274,6 +299,100 @@ export const AssessmentTab: React.FC = () => {
         </div>
       </div>
 
+      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
+              Response Set-Cookie summary
+            </p>
+            <p className="text-[11px] text-gray-400">
+              Cookies observed directly in relevant document, auth callback, and session-related API responses.
+            </p>
+          </div>
+          <span className="text-[10px] text-gray-600">
+            Sensitive observed: <span className="text-gray-300">{setCookieSummary.sensitiveObservedCount}</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5 text-[10px] text-gray-400">
+          <span className="px-2 py-1 border rounded bg-gray-900/60 border-gray-700 text-gray-300">
+            Relevant responses: <span className="text-white">{setCookieSummary.relevantRequestCount}</span>
+          </span>
+          <span className="px-2 py-1 border rounded bg-gray-900/60 border-gray-700 text-gray-300">
+            Set-Cookie observed: <span className="text-white">{setCookieSummary.observedCount}</span>
+          </span>
+          <span className="px-2 py-1 border rounded bg-gray-900/60 border-gray-700 text-gray-300">
+            Browser jar cookies: <span className="text-white">{cookies.length}</span>
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
+              Observed in responses
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {setCookieSummary.observedNames.length > 0 ? setCookieSummary.observedNames.map(name => (
+                <span key={name} className="px-1.5 py-px text-[10px] font-mono border rounded bg-blue-950/30 border-blue-900/40 text-blue-300">
+                  {name}
+                </span>
+              )) : (
+                <span className="text-[11px] text-gray-500">No relevant Set-Cookie response observed yet.</span>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
+              Sensitive names in browser jar
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {setCookieSummary.persistedSensitiveNames.length > 0 ? setCookieSummary.persistedSensitiveNames.map(name => (
+                <span key={name} className="px-1.5 py-px text-[10px] font-mono border rounded bg-amber-950/30 border-amber-900/40 text-amber-300">
+                  {name}
+                </span>
+              )) : (
+                <span className="text-[11px] text-gray-500">No sensitive cookie currently persisted in the browser jar.</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
+              Token summary
+            </p>
+            <p className="text-[11px] text-gray-400">
+              Browser-observed token and JWT candidates by origin. Manual token input is evaluated separately in the Tokens tab.
+            </p>
+          </div>
+          <span className="text-[10px] text-gray-600">
+            JWTs: <span className="text-gray-300">{tokenSummary.jwtCount}</span> · Opaque: <span className="text-gray-300">{tokenSummary.opaqueCount}</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {(Object.keys(TOKEN_ORIGIN_LABELS) as TokenAssessmentOrigin[]).map(origin => (
+            <span key={origin} className="px-2 py-1 text-[10px] border rounded bg-gray-900/60 border-gray-700 text-gray-300">
+              {TOKEN_ORIGIN_LABELS[origin]}: <span className="text-white">{tokenSummary.counts[origin]}</span>
+            </span>
+          ))}
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
+            Observed token sources
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {tokenSummary.labels.length > 0 ? tokenSummary.labels.map(label => (
+              <span key={label} className="px-1.5 py-px text-[10px] font-mono border rounded bg-emerald-950/30 border-emerald-900/40 text-emerald-300">
+                {label}
+              </span>
+            )) : (
+              <span className="text-[11px] text-gray-500">No browser-observed token candidates yet.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center h-full text-gray-700 text-[11px]">
@@ -304,6 +423,12 @@ export const AssessmentTab: React.FC = () => {
                   <h3 className="text-[12px] text-gray-100 font-semibold">{finding.title}</h3>
                 </div>
                 <p className="text-[11px] text-gray-400 leading-relaxed">{finding.summary}</p>
+                {finding.category === 'headers' && finding.whyItMatters && (
+                  <div>
+                    <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Why it matters</p>
+                    <p className="text-[11px] text-gray-300 leading-relaxed">{finding.whyItMatters}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Evidence</p>
                   <p className="text-[11px] text-gray-300 font-mono break-words">{finding.evidence}</p>

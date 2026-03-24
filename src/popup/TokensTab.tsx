@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import type { StorageEntry, StorageScanResult, TokenData } from '../types';
+import type { AssessmentFinding, StorageEntry, StorageScanResult, TokenData } from '../types';
+import { assessManualToken } from '../utils/assessment';
 import { decodeJwt, formatExpiry, isJwt } from '../utils/jwtUtils';
 
 // ── Timestamp helper ───────────────────────────────────────────────────────────
@@ -38,6 +39,19 @@ const IconChevron: React.FC<{ open: boolean }> = ({ open }) => (
 );
 
 const TIMESTAMP_CLAIMS = new Set(['exp', 'iat', 'nbf']);
+
+function manualRiskClasses(severity: AssessmentFinding['severity']): string {
+  switch (severity) {
+    case 'high':
+      return 'text-red-300 bg-red-950/40 border-red-900/60';
+    case 'medium':
+      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
+    case 'low':
+      return 'text-sky-300 bg-sky-950/40 border-sky-900/60';
+    case 'info':
+      return 'text-gray-300 bg-gray-900/60 border-gray-700';
+  }
+}
 
 /** Render a JSON value as a syntax-highlighted tree (pure CSS, no lib). */
 function JsonTree({ value, depth = 0, parentKey }: { value: unknown; depth?: number; parentKey?: string }): React.ReactElement {
@@ -337,6 +351,8 @@ export const TokensTab: React.FC<{
     ? { source: 'manual', label: 'Live preview', raw: manualToken.raw, token: manualToken }
     : null;
 
+  const manualFindings = manualToken ? assessManualToken(manualToken.raw) : [];
+
   const allViews = [
     ...(manualView ? [manualView] : []),
     ...storageViews,
@@ -380,6 +396,37 @@ export const TokensTab: React.FC<{
         </div>
         {manualErr && (
           <p className="text-[11px] text-red-400">{manualErr}</p>
+        )}
+        {manualToken && (
+          <div className="space-y-2 rounded border border-gray-800 bg-gray-950/40 px-2.5 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] uppercase tracking-widest text-gray-500 font-medium select-none">
+                Risk preview
+              </p>
+              <span className="text-[10px] text-gray-600">
+                {manualFindings.length} finding{manualFindings.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            {manualFindings.length > 0 ? (
+              <div className="space-y-1.5">
+                {manualFindings.map(finding => (
+                  <div key={finding.id} className="flex items-start gap-2">
+                    <span className={`px-1.5 py-px text-[9px] font-bold border rounded shrink-0 ${manualRiskClasses(finding.severity)}`}>
+                      {finding.severity.toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-gray-200 leading-relaxed">{finding.title}</p>
+                      <p className="text-[10px] text-gray-500 leading-relaxed">{finding.summary}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                No obvious structural JWT risk signals were detected. Signature trust and revocation state are still outside the scope of this local preview.
+              </p>
+            )}
+          </div>
         )}
       </div>
 
