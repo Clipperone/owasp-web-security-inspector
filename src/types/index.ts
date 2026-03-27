@@ -168,6 +168,33 @@ export interface CachedRequest {
   responseHeaders: { name: string; value: string }[];
 }
 
+export type HeaderAssessmentStatus = 'pass' | 'fail' | 'warn' | 'not-applicable';
+
+export type HeaderAssessmentKind = 'required' | 'deprecated' | 'advisory';
+
+export interface HeaderAssessmentCheck {
+  id: string;
+  headerName: string;
+  kind: HeaderAssessmentKind;
+  status: HeaderAssessmentStatus;
+  summary: string;
+  expected: string;
+  observedValues: string[];
+  evidence: string;
+  remediation: string;
+  source: 'validator' | 'project';
+}
+
+export interface HeaderAssessmentReport {
+  activeUrl: string;
+  primaryRequest: CachedRequest | null;
+  capturedRequestCount: number;
+  logoutRequestCount: number;
+  observedHeaderNames: string[];
+  checks: HeaderAssessmentCheck[];
+  summary: Record<HeaderAssessmentStatus, number>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Assessment types  (aggregated OWASP-oriented findings in the popup)
 // ─────────────────────────────────────────────────────────────────────────────

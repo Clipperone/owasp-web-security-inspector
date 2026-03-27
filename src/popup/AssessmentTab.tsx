@@ -1,136 +1,219 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ActiveTabInfo,
-  AssessmentCategory,
-  AssessmentFinding,
   CachedRequest,
-  CookieAssessmentCategory,
-  SetCookieAssessmentSummary,
-  StorageScanResult,
-  TokenAssessmentOrigin,
+  HeaderAssessmentCheck,
+  HeaderAssessmentKind,
+  HeaderAssessmentReport,
+  HeaderAssessmentStatus,
 } from '../types';
-import { buildAssessmentFindings, getCookieAssessmentSummary, getFindingCounts, getSetCookieAssessmentSummary, getTokenAssessmentSummary } from '../utils/assessment';
+import { getOwaspHeaderAssessment } from '../utils/assessment';
 
-type FindingGroup = 'auth/session' | 'csrf' | 'browser hardening' | 'disclosure' | 'token handling' | 'general review';
+type AssessmentSubtabId = 'headers' | 'cookies' | 'tokens' | 'storage';
 
-const CATEGORY_LABELS: Record<AssessmentCategory, string> = {
-  cookies: 'Cookies',
-  tokens: 'Tokens',
-  headers: 'Headers',
-  storage: 'Storage',
+const ASSESSMENT_SUBTABS: Array<{
+  id: AssessmentSubtabId;
+  label: string;
+  enabled: boolean;
+}> = [
+  {
+    id: 'headers',
+    label: 'Headers',
+    enabled: true,
+  },
+  {
+    id: 'cookies',
+    label: 'Cookies',
+    enabled: false,
+  },
+  {
+    id: 'tokens',
+    label: 'Tokens',
+    enabled: false,
+  },
+  {
+    id: 'storage',
+    label: 'Storage',
+    enabled: false,
+  },
+];
+
+const STATUS_LABELS: Record<HeaderAssessmentStatus, string> = {
+  pass: 'Pass',
+  fail: 'Fail',
+  warn: 'Warn',
+  'not-applicable': 'N/A',
 };
 
-const COOKIE_CATEGORY_LABELS: Record<CookieAssessmentCategory, string> = {
-  'session/auth': 'Session/Auth',
-  csrf: 'CSRF',
-  preference: 'Preference',
-  'analytics/other': 'Analytics/Other',
+const KIND_LABELS: Record<HeaderAssessmentKind, string> = {
+  required: 'Required',
+  deprecated: 'Should Be Absent',
+  advisory: 'Advisory',
 };
 
-const TOKEN_ORIGIN_LABELS: Record<TokenAssessmentOrigin, string> = {
-  cookie: 'Cookie',
-  localStorage: 'localStorage',
-  sessionStorage: 'sessionStorage',
-  manual: 'Manual',
+const STATUS_SORT_WEIGHT: Record<HeaderAssessmentStatus, number> = {
+  fail: 0,
+  warn: 1,
+  pass: 2,
+  'not-applicable': 3,
 };
 
-const FINDING_GROUP_LABELS: Record<FindingGroup, string> = {
-  'auth/session': 'Auth/Session',
-  csrf: 'CSRF',
-  'browser hardening': 'Browser Hardening',
-  disclosure: 'Disclosure',
-  'token handling': 'Token Handling',
-  'general review': 'General Review',
-};
-
-function severityClasses(severity: AssessmentFinding['severity']): string {
-  switch (severity) {
-    case 'high':
-      return 'text-red-300 bg-red-950/40 border-red-900/60';
-    case 'medium':
-      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
-    case 'low':
-      return 'text-sky-300 bg-sky-950/40 border-sky-900/60';
-    case 'info':
-      return 'text-gray-300 bg-gray-900/60 border-gray-700';
-  }
-}
-
-function categoryClasses(category: AssessmentCategory): string {
-  switch (category) {
-    case 'cookies':
-      return 'text-amber-400 bg-amber-900/30 border-amber-800/50';
-    case 'tokens':
-      return 'text-emerald-400 bg-emerald-900/30 border-emerald-800/50';
-    case 'headers':
-      return 'text-blue-400 bg-blue-900/30 border-blue-800/50';
-    case 'storage':
-      return 'text-purple-400 bg-purple-900/30 border-purple-800/50';
-  }
-}
-
-function groupClasses(group: FindingGroup): string {
-  switch (group) {
-    case 'auth/session':
-      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
-    case 'csrf':
-      return 'text-rose-300 bg-rose-950/40 border-rose-900/60';
-    case 'browser hardening':
-      return 'text-cyan-300 bg-cyan-950/40 border-cyan-900/60';
-    case 'disclosure':
-      return 'text-orange-300 bg-orange-950/40 border-orange-900/60';
-    case 'token handling':
+function statusClasses(status: HeaderAssessmentStatus): string {
+  switch (status) {
+    case 'pass':
       return 'text-emerald-300 bg-emerald-950/40 border-emerald-900/60';
-    case 'general review':
+    case 'fail':
+      return 'text-red-300 bg-red-950/40 border-red-900/60';
+    case 'warn':
+      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
+    case 'not-applicable':
       return 'text-gray-300 bg-gray-900/60 border-gray-700';
   }
 }
 
-function findingGroup(finding: AssessmentFinding): FindingGroup {
-  const title = finding.title.toLowerCase();
-  const summary = finding.summary.toLowerCase();
-  if (title.includes('csrf') || summary.includes('csrf')) return 'csrf';
-  if (title.includes('server header') || title.includes('x-powered-by') || title.includes('discloses')) return 'disclosure';
-  if (finding.category === 'headers') return 'browser hardening';
-  if (finding.category === 'tokens' || finding.category === 'storage') return 'token handling';
-  if (finding.category === 'cookies') return 'auth/session';
-  return 'general review';
+function groupChecks(report: HeaderAssessmentReport): Record<HeaderAssessmentKind, HeaderAssessmentCheck[]> {
+  return report.checks.reduce<Record<HeaderAssessmentKind, HeaderAssessmentCheck[]>>((acc, check) => {
+    acc[check.kind].push(check);
+    return acc;
+  }, {
+    required: [],
+    deprecated: [],
+    advisory: [],
+  });
 }
 
-function isActionableFinding(finding: AssessmentFinding): boolean {
-  return finding.severity !== 'info';
+function sortChecks(checks: HeaderAssessmentCheck[]): HeaderAssessmentCheck[] {
+  return [...checks].sort((left, right) => {
+    const statusDelta = STATUS_SORT_WEIGHT[left.status] - STATUS_SORT_WEIGHT[right.status];
+    if (statusDelta !== 0) return statusDelta;
+    return left.headerName.localeCompare(right.headerName);
+  });
 }
 
-function findingImpact(finding: AssessmentFinding): string {
-  if (finding.whyItMatters) return finding.whyItMatters;
+function buildMarkdownReport(report: HeaderAssessmentReport): string {
+  const lines = [
+    '# OWASP Secure Headers Assessment',
+    '',
+    `Generated: ${new Date().toISOString()}`,
+    `Active URL: ${report.activeUrl || 'unknown'}`,
+    `Captured requests: ${report.capturedRequestCount}`,
+    `Logout-like requests: ${report.logoutRequestCount}`,
+    `Primary response: ${report.primaryRequest ? `${report.primaryRequest.method} ${report.primaryRequest.url} (${report.primaryRequest.statusCode})` : 'not captured'}`,
+    '',
+    '## Summary',
+    '',
+    `- Pass: ${report.summary.pass}`,
+    `- Fail: ${report.summary.fail}`,
+    `- Warn: ${report.summary.warn}`,
+    `- Not applicable: ${report.summary['not-applicable']}`,
+    '',
+  ];
 
-  switch (findingGroup(finding)) {
-    case 'auth/session':
-      return 'This can weaken browser-visible session protections or make authentication state easier to steal, replay, or misuse.';
-    case 'csrf':
-      return 'This can make cross-site request flows harder to reason about and can weaken CSRF defenses visible from the browser.';
-    case 'browser hardening':
-      return 'This can reduce built-in browser protections against injection, framing abuse, unsafe embedding, or risky cross-origin behavior.';
-    case 'disclosure':
-      return 'This increases reconnaissance value by exposing implementation details that help attackers fingerprint the application stack.';
-    case 'token handling':
-      return 'This increases the exposure window or misuse risk for tokens handled inside the browser context.';
-    case 'general review':
-      return 'This is worth reviewing because it changes how the browser observes, stores, or protects application security state.';
-  }
+  const grouped = groupChecks(report);
+  const sections: HeaderAssessmentKind[] = ['required', 'deprecated', 'advisory'];
+
+  sections.forEach(section => {
+    lines.push(`## ${KIND_LABELS[section]}`);
+    lines.push('');
+
+    if (grouped[section].length === 0) {
+      lines.push('- No checks in this section.');
+      lines.push('');
+      return;
+    }
+
+    grouped[section].forEach((check, index) => {
+      lines.push(`${index + 1}. [${STATUS_LABELS[check.status].toUpperCase()}] ${check.headerName}`);
+      lines.push(`Summary: ${check.summary}`);
+      lines.push(`Expected: ${check.expected}`);
+      lines.push(`Observed: ${check.observedValues.length > 0 ? check.observedValues.join(' | ') : 'Not observed'}`);
+      lines.push(`Evidence: ${check.evidence}`);
+      lines.push(`Remediation: ${check.remediation}`);
+      lines.push('');
+    });
+  });
+
+  return lines.join('\n');
+}
+
+function HeaderCheckCard({ check }: { check: HeaderAssessmentCheck }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="border-b border-gray-800/60 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setExpanded(current => !current)}
+        className="w-full px-3 py-2 text-left hover:bg-gray-900/20 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${statusClasses(check.status)}`}>
+            {STATUS_LABELS[check.status].toUpperCase()}
+          </span>
+          <h3 className="text-[12px] text-gray-100 font-semibold flex-1 min-w-0">{check.headerName}</h3>
+          <span className="text-[11px] text-gray-500 shrink-0">{expanded ? '−' : '+'}</span>
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2 space-y-1.5">
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Summary</p>
+            <p className="text-[11px] text-gray-300 leading-relaxed">{check.summary}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Expected</p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">{check.expected}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Observed</p>
+            <p className="text-[11px] text-gray-300 font-mono break-words">
+              {check.observedValues.length > 0 ? check.observedValues.join(' | ') : 'Not observed'}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Evidence</p>
+            <p className="text-[11px] text-gray-300 leading-relaxed">{check.evidence}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Remediation</p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">{check.remediation}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeaderCheckSection({
+  kind,
+  checks,
+}: {
+  kind: HeaderAssessmentKind;
+  checks: HeaderAssessmentCheck[];
+}): React.JSX.Element {
+  const orderedChecks = sortChecks(checks);
+
+  return (
+    <section className="border border-gray-800 rounded overflow-hidden bg-gray-950/20">
+      <div className="px-3 py-2 border-b border-gray-800 bg-gray-950/40">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium">{KIND_LABELS[kind]}</p>
+          <span className="text-[10px] text-gray-500">{checks.length} checks</span>
+        </div>
+      </div>
+      <div>
+        {orderedChecks.map(check => <HeaderCheckCard key={check.id} check={check} />)}
+      </div>
+    </section>
+  );
 }
 
 export const AssessmentTab: React.FC = () => {
+  const [activeSubtab, setActiveSubtab] = useState<AssessmentSubtabId>('headers');
   const [tabInfo, setTabInfo] = useState<ActiveTabInfo | null>(null);
-  const [cookies, setCookies] = useState<chrome.cookies.Cookie[]>([]);
-  const [scanResult, setScanResult] = useState<StorageScanResult | null>(null);
   const [requests, setRequests] = useState<CachedRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<AssessmentFinding['severity'] | 'all'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<AssessmentCategory | 'all'>('all');
-  const [groupFilter, setGroupFilter] = useState<FindingGroup | 'all'>('all');
-  const [actionableOnly, setActionableOnly] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -146,21 +229,7 @@ export const AssessmentTab: React.FC = () => {
       const info = tabResponse.data as ActiveTabInfo;
       setTabInfo(info);
 
-      const cookieList = await chrome.cookies.getAll({ url: info.url });
-      setCookies(cookieList);
-
-      try {
-        await chrome.runtime.sendMessage({ type: 'RUN_STORAGE_SCAN' });
-      } catch {
-        // Best effort only — the cached result can still be useful.
-      }
-
-      const [storageResponse, headersResponse] = await Promise.all([
-        chrome.runtime.sendMessage({ type: 'GET_STORAGE_TOKENS' }),
-        chrome.runtime.sendMessage({ type: 'GET_TAB_HEADERS', payload: info.tabId }),
-      ]);
-
-      setScanResult(storageResponse?.success ? (storageResponse.data as StorageScanResult | null) : null);
+      const headersResponse = await chrome.runtime.sendMessage({ type: 'GET_TAB_HEADERS', payload: info.tabId });
       setRequests(headersResponse?.success ? (headersResponse.data as CachedRequest[] ?? []) : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assessment failed to load.');
@@ -173,104 +242,17 @@ export const AssessmentTab: React.FC = () => {
     void load();
   }, [load]);
 
-  const findings = useMemo(() => {
-    if (!tabInfo) return [];
-    return buildAssessmentFindings({
-      activeUrl: tabInfo.url,
-      cookies,
-      storageEntries: scanResult?.entries ?? [],
-      requests,
-    });
-  }, [cookies, requests, scanResult?.entries, tabInfo]);
-
-  const counts = useMemo(() => getFindingCounts(findings), [findings]);
-  const cookieSummary = useMemo(() => getCookieAssessmentSummary(cookies, tabInfo?.url ?? '/'), [cookies, tabInfo?.url]);
-  const setCookieSummary: SetCookieAssessmentSummary = useMemo(
-    () => getSetCookieAssessmentSummary(tabInfo?.url ?? '/', requests, cookies),
-    [cookies, requests, tabInfo?.url],
+  const headerReport = useMemo(
+    () => getOwaspHeaderAssessment(tabInfo?.url ?? '', requests),
+    [requests, tabInfo?.url],
   );
-  const tokenSummary = useMemo(
-    () => getTokenAssessmentSummary(cookies, scanResult?.entries ?? []),
-    [cookies, scanResult?.entries],
-  );
-  const sessionAuthCookieCount = cookieSummary.counts['session/auth'];
-  const csrfCookieCount = cookieSummary.counts.csrf;
-  const visibleFindings = useMemo(() => {
-    return findings.filter(finding => {
-      if (filter !== 'all' && finding.severity !== filter) return false;
-      if (categoryFilter !== 'all' && finding.category !== categoryFilter) return false;
-      if (groupFilter !== 'all' && findingGroup(finding) !== groupFilter) return false;
-      if (actionableOnly && !isActionableFinding(finding)) return false;
-      return true;
-    });
-  }, [actionableOnly, categoryFilter, filter, findings, groupFilter]);
 
-  const visibleCounts = useMemo(() => getFindingCounts(visibleFindings), [visibleFindings]);
-
-  const markdownReport = useMemo(() => {
-    const lines = [
-      '# OWASP-Oriented Browser Assessment',
-      '',
-      `Generated: ${new Date().toISOString()}`,
-      `URL: ${tabInfo?.url ?? 'unknown'}`,
-      `Cookies observed: ${cookies.length}`,
-      `Session/Auth cookies: ${sessionAuthCookieCount}`,
-      `CSRF cookies: ${csrfCookieCount}`,
-      `Set-Cookie observed on responses: ${setCookieSummary.observedCount}`,
-      `Relevant Set-Cookie responses: ${setCookieSummary.relevantRequestCount}`,
-      `Token candidates observed: ${tokenSummary.observedCount}`,
-      `JWT candidates: ${tokenSummary.jwtCount}`,
-      `Opaque token candidates: ${tokenSummary.opaqueCount}`,
-      `Storage entries observed: ${scanResult?.entries.length ?? 0}`,
-      `Captured requests: ${requests.length}`,
-      `Severity filter: ${filter}`,
-      `Category filter: ${categoryFilter}`,
-      `Group filter: ${groupFilter}`,
-      `Actionable only: ${actionableOnly ? 'yes' : 'no'}`,
-      '',
-      '## Severity Summary',
-      '',
-      `- High: ${visibleCounts.high}`,
-      `- Medium: ${visibleCounts.medium}`,
-      `- Low: ${visibleCounts.low}`,
-      `- Info: ${visibleCounts.info}`,
-      '',
-      '## Findings',
-      '',
-    ];
-
-    if (visibleFindings.length === 0) {
-      lines.push('- No findings in the current browser-visible context.');
-    } else {
-      visibleFindings.forEach((finding, index) => {
-        lines.push(`${index + 1}. [${finding.severity.toUpperCase()}] ${finding.title}`);
-        lines.push(`Category: ${CATEGORY_LABELS[finding.category]}`);
-        lines.push(`Group: ${FINDING_GROUP_LABELS[findingGroup(finding)]}`);
-        lines.push(`Actionable: ${isActionableFinding(finding) ? 'yes' : 'no'}`);
-        lines.push(`Problem: ${finding.summary}`);
-        lines.push(`Impact: ${findingImpact(finding)}`);
-        lines.push(`Evidence: ${finding.evidence}`);
-        lines.push(`Remediation: ${finding.remediation}`);
-        lines.push('');
-      });
-    }
-
-    return lines.join('\n');
-  }, [actionableOnly, categoryFilter, cookies.length, csrfCookieCount, filter, groupFilter, requests.length, scanResult?.entries.length, sessionAuthCookieCount, setCookieSummary.observedCount, setCookieSummary.relevantRequestCount, tabInfo?.url, tokenSummary.jwtCount, tokenSummary.observedCount, tokenSummary.opaqueCount, visibleCounts.high, visibleCounts.info, visibleCounts.low, visibleCounts.medium, visibleFindings]);
+  const groupedChecks = useMemo(() => groupChecks(headerReport), [headerReport]);
 
   const copyReport = useCallback(async (format: 'markdown' | 'json') => {
     const payload = format === 'markdown'
-      ? markdownReport
-      : JSON.stringify({
-          generatedAt: new Date().toISOString(),
-          filter,
-          tab: tabInfo,
-          counts: visibleCounts,
-          categoryFilter,
-          groupFilter,
-          actionableOnly,
-          findings: visibleFindings,
-        }, null, 2);
+      ? buildMarkdownReport(headerReport)
+      : JSON.stringify(headerReport, null, 2);
 
     try {
       await navigator.clipboard.writeText(payload);
@@ -280,11 +262,11 @@ export const AssessmentTab: React.FC = () => {
       setCopyToast('Clipboard copy failed.');
       window.setTimeout(() => setCopyToast(null), 2200);
     }
-  }, [actionableOnly, categoryFilter, filter, groupFilter, markdownReport, tabInfo, visibleCounts, visibleFindings]);
+  }, [headerReport]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 bg-gray-900/30 shrink-0">
+      <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-gray-800 bg-gray-900/30 shrink-0">
         <div className="flex-1 min-w-0">
           <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
             Browser security assessment
@@ -295,242 +277,60 @@ export const AssessmentTab: React.FC = () => {
         </div>
         <button
           onClick={() => { void load(); }}
-          className="px-2 py-1 text-[11px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-blue-400 hover:border-blue-800/50 rounded transition-colors shrink-0"
+          className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-blue-400 hover:border-blue-800/50 rounded transition-colors shrink-0"
         >
           Refresh
         </button>
         <button
           onClick={() => { void copyReport('markdown'); }}
-          className="px-2 py-1 text-[11px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:border-emerald-800/50 rounded transition-colors shrink-0"
-          title="Copy the currently visible assessment report in Markdown"
+          className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:border-emerald-800/50 rounded transition-colors shrink-0"
+          title="Copy the current OWASP Secure Headers report in Markdown"
         >
           Copy MD
         </button>
         <button
           onClick={() => { void copyReport('json'); }}
-          className="px-2 py-1 text-[11px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-purple-400 hover:border-purple-800/50 rounded transition-colors shrink-0"
-          title="Copy the currently visible assessment report in JSON"
+          className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-purple-400 hover:border-purple-800/50 rounded transition-colors shrink-0"
+          title="Copy the current OWASP Secure Headers report in JSON"
         >
           Copy JSON
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 px-3 py-3 border-b border-gray-800 bg-gray-900/20 shrink-0">
-        {(['high', 'medium', 'low', 'info'] as const).map(severity => (
-          <button
-            key={severity}
-            onClick={() => setFilter(current => current === severity ? 'all' : severity)}
-            className={`rounded border px-2 py-2 text-left transition-colors ${severityClasses(severity)} ${filter === severity ? 'ring-1 ring-current' : ''}`}
-          >
-            <p className="text-[10px] uppercase tracking-widest font-bold">{severity}</p>
-            <p className="text-xl leading-none mt-1 font-semibold">{counts[severity]}</p>
-          </button>
-        ))}
-      </div>
+      <div className="px-2.5 py-2 border-b border-gray-800 bg-gray-900/20 shrink-0 space-y-2">
+        <div className="grid grid-cols-4 gap-1">
+          {ASSESSMENT_SUBTABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              disabled={!tab.enabled}
+              onClick={() => tab.enabled && setActiveSubtab(tab.id)}
+              className={[
+                'rounded border px-1.5 py-1 text-center transition-colors min-w-0',
+                tab.enabled
+                  ? activeSubtab === tab.id
+                    ? 'border-blue-800/60 bg-blue-950/30 text-blue-200'
+                    : 'border-gray-700 bg-gray-900/60 text-gray-300 hover:text-white hover:border-gray-600'
+                  : 'border-gray-800 bg-gray-950/40 text-gray-600 cursor-not-allowed',
+              ].join(' ')}
+            >
+              <div className="flex items-center justify-center gap-1 min-w-0">
+                <span className="text-[11px] font-medium truncate">{tab.label}</span>
+                {!tab.enabled && (
+                  <span className="px-1 py-px text-[8px] uppercase tracking-widest border border-gray-800 rounded text-gray-500 shrink-0">
+                    Soon
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
 
-      <div className="px-3 py-2 border-b border-gray-800 bg-gray-900/10 shrink-0">
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
-          <span>Cookies: <span className="text-gray-300">{cookies.length}</span></span>
-          <span>Storage entries: <span className="text-gray-300">{scanResult?.entries.length ?? 0}</span></span>
-          <span>Captured requests: <span className="text-gray-300">{requests.length}</span></span>
-          {filter !== 'all' && <span>Filter: <span className="text-gray-300 uppercase">{filter}</span></span>}
+          <span>Captured requests: <span className="text-gray-300">{headerReport.capturedRequestCount}</span></span>
+          <span>Logout-like requests: <span className="text-gray-300">{headerReport.logoutRequestCount}</span></span>
+          <span>Observed primary headers: <span className="text-gray-300">{headerReport.observedHeaderNames.length}</span></span>
           {copyToast && <span className="text-emerald-400">{copyToast}</span>}
-        </div>
-      </div>
-
-      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
-        <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
-          <span className="text-gray-400">Focused on browser-observable security signals. This is not a compliance certification.</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            onClick={() => setActionableOnly(current => !current)}
-            className={`px-2 py-1 text-[10px] border rounded transition-colors ${actionableOnly ? 'bg-emerald-950/30 border-emerald-900/50 text-emerald-300' : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
-          >
-            Actionable only
-          </button>
-          <button
-            onClick={() => {
-              setFilter('all');
-              setCategoryFilter('all');
-              setGroupFilter('all');
-              setActionableOnly(false);
-            }}
-            className="px-2 py-1 text-[10px] border rounded transition-colors bg-gray-900/60 border-gray-700 text-gray-400 hover:text-gray-200"
-          >
-            Reset filters
-          </button>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Category</p>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              onClick={() => setCategoryFilter('all')}
-              className={`px-2 py-1 text-[10px] border rounded transition-colors ${categoryFilter === 'all' ? 'bg-gray-200 text-gray-950 border-gray-200' : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
-            >
-              All
-            </button>
-            {(Object.keys(CATEGORY_LABELS) as AssessmentCategory[]).map(category => (
-              <button
-                key={category}
-                onClick={() => setCategoryFilter(current => current === category ? 'all' : category)}
-                className={`px-2 py-1 text-[10px] border rounded transition-colors ${categoryFilter === category ? categoryClasses(category) : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
-              >
-                {CATEGORY_LABELS[category]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Group</p>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              onClick={() => setGroupFilter('all')}
-              className={`px-2 py-1 text-[10px] border rounded transition-colors ${groupFilter === 'all' ? 'bg-gray-200 text-gray-950 border-gray-200' : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
-            >
-              All
-            </button>
-            {(Object.keys(FINDING_GROUP_LABELS) as FindingGroup[]).map(group => (
-              <button
-                key={group}
-                onClick={() => setGroupFilter(current => current === group ? 'all' : group)}
-                className={`px-2 py-1 text-[10px] border rounded transition-colors ${groupFilter === group ? groupClasses(group) : 'bg-gray-900/60 border-gray-700 text-gray-400'}`}
-              >
-                {FINDING_GROUP_LABELS[group]}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
-              Cookie summary
-            </p>
-            <p className="text-[11px] text-gray-400">
-              Automatic classification of the currently observed cookie state.
-            </p>
-          </div>
-          <span className="text-[10px] text-gray-600">
-            Critical cookies: <span className="text-gray-300">{cookieSummary.criticalCookies.length}</span>
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(COOKIE_CATEGORY_LABELS) as CookieAssessmentCategory[]).map(category => (
-            <span key={category} className="px-2 py-1 text-[10px] border rounded bg-gray-900/60 border-gray-700 text-gray-300">
-              {COOKIE_CATEGORY_LABELS[category]}: <span className="text-white">{cookieSummary.counts[category]}</span>
-            </span>
-          ))}
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
-            Critical cookie names
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {cookieSummary.criticalCookies.length > 0 ? cookieSummary.criticalCookies.map(name => (
-              <span key={name} className="px-1.5 py-px text-[10px] font-mono border rounded bg-red-950/30 border-red-900/40 text-red-300">
-                {name}
-              </span>
-            )) : (
-              <span className="text-[11px] text-gray-500">No high or medium cookie findings detected.</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
-              Response Set-Cookie summary
-            </p>
-            <p className="text-[11px] text-gray-400">
-              Cookies observed directly in relevant document, auth callback, and session-related API responses.
-            </p>
-          </div>
-          <span className="text-[10px] text-gray-600">
-            Sensitive observed: <span className="text-gray-300">{setCookieSummary.sensitiveObservedCount}</span>
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5 text-[10px] text-gray-400">
-          <span className="px-2 py-1 border rounded bg-gray-900/60 border-gray-700 text-gray-300">
-            Relevant responses: <span className="text-white">{setCookieSummary.relevantRequestCount}</span>
-          </span>
-          <span className="px-2 py-1 border rounded bg-gray-900/60 border-gray-700 text-gray-300">
-            Set-Cookie observed: <span className="text-white">{setCookieSummary.observedCount}</span>
-          </span>
-          <span className="px-2 py-1 border rounded bg-gray-900/60 border-gray-700 text-gray-300">
-            Browser jar cookies: <span className="text-white">{cookies.length}</span>
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
-              Observed in responses
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {setCookieSummary.observedNames.length > 0 ? setCookieSummary.observedNames.map(name => (
-                <span key={name} className="px-1.5 py-px text-[10px] font-mono border rounded bg-blue-950/30 border-blue-900/40 text-blue-300">
-                  {name}
-                </span>
-              )) : (
-                <span className="text-[11px] text-gray-500">No relevant Set-Cookie response observed yet.</span>
-              )}
-            </div>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
-              Sensitive names in browser jar
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {setCookieSummary.persistedSensitiveNames.length > 0 ? setCookieSummary.persistedSensitiveNames.map(name => (
-                <span key={name} className="px-1.5 py-px text-[10px] font-mono border rounded bg-amber-950/30 border-amber-900/40 text-amber-300">
-                  {name}
-                </span>
-              )) : (
-                <span className="text-[11px] text-gray-500">No sensitive cookie currently persisted in the browser jar.</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="px-3 py-3 border-b border-gray-800 bg-gray-900/10 shrink-0 space-y-2">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
-              Token summary
-            </p>
-            <p className="text-[11px] text-gray-400">
-              Browser-observed token and JWT candidates by origin. Manual token input is assessed separately in the Tokens tab.
-            </p>
-          </div>
-          <span className="text-[10px] text-gray-600">
-            JWTs: <span className="text-gray-300">{tokenSummary.jwtCount}</span> · Opaque: <span className="text-gray-300">{tokenSummary.opaqueCount}</span>
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(TOKEN_ORIGIN_LABELS) as TokenAssessmentOrigin[]).map(origin => (
-            <span key={origin} className="px-2 py-1 text-[10px] border rounded bg-gray-900/60 border-gray-700 text-gray-300">
-              {TOKEN_ORIGIN_LABELS[origin]}: <span className="text-white">{tokenSummary.counts[origin]}</span>
-            </span>
-          ))}
-        </div>
-        <div>
-          <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">
-            Observed token sources
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {tokenSummary.labels.length > 0 ? tokenSummary.labels.map(label => (
-              <span key={label} className="px-1.5 py-px text-[10px] font-mono border rounded bg-emerald-950/30 border-emerald-900/40 text-emerald-300">
-                {label}
-              </span>
-            )) : (
-              <span className="text-[11px] text-gray-500">No browser-observed token candidates yet.</span>
-            )}
-          </div>
         </div>
       </div>
 
@@ -543,50 +343,25 @@ export const AssessmentTab: React.FC = () => {
           <div className="p-4 text-[11px] text-red-300">
             {error}
           </div>
-        ) : visibleFindings.length === 0 ? (
+        ) : activeSubtab !== 'headers' ? (
           <div className="p-4 space-y-2 text-[11px]">
-            <p className="text-emerald-400 font-semibold">No findings in the current filter.</p>
+            <p className="text-gray-200 font-semibold">This subtab is reserved for a later rollout.</p>
             <p className="text-gray-500">
-              This does not prove compliance. It means the extension did not observe matching issues in the current browser-visible context and active filters.
+              The Assessment area now exposes checks incrementally. Headers is the first active subtab; cookie, token, and storage checks will move here in the next steps.
+            </p>
+          </div>
+        ) : !headerReport.primaryRequest ? (
+          <div className="p-4 space-y-2 text-[11px]">
+            <p className="text-amber-300 font-semibold">No captured response headers yet.</p>
+            <p className="text-gray-500">
+              Reload or navigate the page so the extension can capture the document response before running the OWASP Secure Headers checks.
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-800/60">
-            {visibleFindings.map(finding => (
-              <div key={finding.id} className="px-4 py-3 space-y-2">
-                <div className="flex items-start gap-2 flex-wrap">
-                  <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${severityClasses(finding.severity)}`}>
-                    {finding.severity.toUpperCase()}
-                  </span>
-                  <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${categoryClasses(finding.category)}`}>
-                    {CATEGORY_LABELS[finding.category]}
-                  </span>
-                  <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${groupClasses(findingGroup(finding))}`}>
-                    {FINDING_GROUP_LABELS[findingGroup(finding)]}
-                  </span>
-                  <span className="px-1.5 py-px text-[9px] font-bold border rounded bg-gray-900/60 border-gray-700 text-gray-300">
-                    {isActionableFinding(finding) ? 'ACTIONABLE' : 'REVIEW'}
-                  </span>
-                  <h3 className="text-[12px] text-gray-100 font-semibold">{finding.title}</h3>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Problem</p>
-                  <p className="text-[11px] text-gray-400 leading-relaxed">{finding.summary}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Impact</p>
-                  <p className="text-[11px] text-gray-300 leading-relaxed">{findingImpact(finding)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Evidence</p>
-                  <p className="text-[11px] text-gray-300 font-mono break-words">{finding.evidence}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Remediation</p>
-                  <p className="text-[11px] text-gray-400 leading-relaxed">{finding.remediation}</p>
-                </div>
-              </div>
-            ))}
+          <div className="p-2.5 space-y-3">
+            <HeaderCheckSection kind="required" checks={groupedChecks.required} />
+            <HeaderCheckSection kind="deprecated" checks={groupedChecks.deprecated} />
+            <HeaderCheckSection kind="advisory" checks={groupedChecks.advisory} />
           </div>
         )}
       </div>

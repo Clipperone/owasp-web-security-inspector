@@ -6,6 +6,7 @@ import {
   assessHeaders,
   buildAssessmentFindings,
   getFindingCounts,
+  getOwaspHeaderAssessment,
   getTokenAssessmentSummary,
 } from './assessment';
 
@@ -163,5 +164,81 @@ describe('assessment utilities', () => {
     expect(tokenSummary.counts.sessionStorage).toBe(1);
     expect(tokenSummary.counts.manual).toBe(1);
     expect(tokenSummary.jwtCount).toBe(2);
+  });
+
+  test('builds a passing OWASP Secure Headers report for validator-aligned responses', () => {
+    const primaryRequest = createRequest({
+      responseHeaders: [
+        { name: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+        { name: 'X-Frame-Options', value: 'DENY' },
+        { name: 'X-Content-Type-Options', value: 'nosniff' },
+        { name: 'Content-Security-Policy', value: "default-src 'self'; object-src 'none'; frame-ancestors 'none'" },
+        { name: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+        { name: 'Referrer-Policy', value: 'no-referrer' },
+        { name: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+        { name: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+        { name: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+        {
+          name: 'Permissions-Policy',
+          value: 'accelerometer=(), autoplay=(), camera=(), clipboard-read=(), clipboard-write=(), cross-origin-isolated=(), display-capture=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), interest-cohort=(), keyboard-map=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), sync-xhr=(self), unload=(), usb=(), web-share=(), xr-spatial-tracking=()',
+        },
+        { name: 'Cache-Control', value: 'no-store, max-age=0' },
+        { name: 'X-DNS-Prefetch-Control', value: 'off' },
+      ],
+    });
+    const logoutRequest = createRequest({
+      method: 'POST',
+      resourceType: 'xmlhttprequest',
+      url: 'https://app.example.com/logout',
+      responseHeaders: [
+        { name: 'Clear-Site-Data', value: '"cache","cookies","storage"' },
+      ],
+    });
+
+    const report = getOwaspHeaderAssessment('https://app.example.com/account', [primaryRequest, logoutRequest]);
+    const hstsCheck = report.checks.find(check => check.headerName === 'Strict-Transport-Security');
+    const clearSiteDataCheck = report.checks.find(check => check.headerName === 'Clear-Site-Data');
+    const deprecatedChecks = report.checks.filter(check => check.kind === 'deprecated');
+
+    expect(report.summary.fail).toBe(0);
+    expect(report.summary.warn).toBe(0);
+    expect(hstsCheck?.status).toBe('pass');
+    expect(clearSiteDataCheck?.status).toBe('pass');
+    expect(deprecatedChecks.every(check => check.status === 'pass')).toBe(true);
+  });
+
+  test('flags failing OWASP Secure Headers checks and project advisories', () => {
+    const primaryRequest = createRequest({
+      responseHeaders: [
+        { name: 'Strict-Transport-Security', value: 'max-age=31536000' },
+        { name: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        { name: 'X-Content-Type-Options', value: 'sniff' },
+        { name: 'Content-Security-Policy', value: "default-src 'self' 'unsafe-inline'" },
+        { name: 'X-Permitted-Cross-Domain-Policies', value: 'master-only' },
+        { name: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { name: 'Cross-Origin-Embedder-Policy', value: 'unsafe-none' },
+        { name: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
+        { name: 'Cross-Origin-Resource-Policy', value: 'same-site' },
+        { name: 'Permissions-Policy', value: 'geolocation=()' },
+        { name: 'Cache-Control', value: 'private, max-age=60' },
+        { name: 'X-DNS-Prefetch-Control', value: 'on' },
+        { name: 'Expect-CT', value: 'max-age=86400' },
+        { name: 'Server', value: 'nginx/1.27.0' },
+        { name: 'X-Powered-By', value: 'Express' },
+      ],
+    });
+
+    const report = getOwaspHeaderAssessment('https://app.example.com/account', [primaryRequest]);
+    const cspCheck = report.checks.find(check => check.headerName === 'Content-Security-Policy');
+    const clearSiteDataCheck = report.checks.find(check => check.headerName === 'Clear-Site-Data');
+    const expectCtCheck = report.checks.find(check => check.headerName === 'Expect-CT');
+    const serverCheck = report.checks.find(check => check.headerName === 'Server');
+
+    expect(report.summary.fail).toBeGreaterThan(0);
+    expect(report.summary.warn).toBeGreaterThan(0);
+    expect(cspCheck?.status).toBe('fail');
+    expect(clearSiteDataCheck?.status).toBe('not-applicable');
+    expect(expectCtCheck?.status).toBe('fail');
+    expect(serverCheck?.status).toBe('warn');
   });
 });

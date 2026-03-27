@@ -41,11 +41,11 @@ It does not verify, for example:
 
 ### Assessment
 
-- Aggregated browser-side findings across cookies, observed `Set-Cookie`, tokens, storage, and response headers.
-- Severity-based review with category, group, and actionable-only filters.
-- Export of the current assessment view in Markdown or JSON.
-- Summary blocks for cookie posture, observed `Set-Cookie`, and token origins.
-- Heuristics designed to reflect common OWASP-oriented best practices rather than project-specific opinions.
+- Incremental assessment workspace with a second-level tab model, starting from `Assessment > Headers`.
+- `Assessment > Headers` validates the active page response against the OWASP Secure Headers project and the public validator test suite semantics.
+- Exact header values are enforced where the validator expects exact matches, while `Clear-Site-Data` remains conditional on observing a logout-like response in the captured traffic.
+- Export of the current headers assessment view in Markdown or JSON.
+- Additional assessment sections for cookies, tokens, and storage can be introduced progressively without mixing all checks into a single panel.
 
 ### Cookies
 
