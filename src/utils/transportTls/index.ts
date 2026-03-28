@@ -1,11 +1,9 @@
 import type { TransportTlsReport } from '../../types';
 import {
-  detectCertificateTrust,
   detectDowngradeSignals,
   detectHstsPosture,
   detectHttpsAdoption,
   detectSensitiveDataOverEncryptedChannel,
-  detectTlsPosture,
 } from './detectors';
 import {
   buildOverview,
@@ -20,12 +18,10 @@ import {
 
 export type { TransportTlsInputs } from './helpers';
 export {
-  detectCertificateTrust,
   detectDowngradeSignals,
   detectHstsPosture,
   detectHttpsAdoption,
   detectSensitiveDataOverEncryptedChannel,
-  detectTlsPosture,
 };
 
 export function buildTransportTlsSummary(report: TransportTlsReport): string {
@@ -42,8 +38,6 @@ export function buildTransportTlsSection(inputs: TransportTlsInputs): TransportT
     detectSensitiveDataOverEncryptedChannel(inputs),
     detectHstsPosture(inputs),
     detectDowngradeSignals(inputs),
-    detectCertificateTrust(inputs),
-    detectTlsPosture(inputs),
   ];
   const summary = summarizeChecks(checks);
 

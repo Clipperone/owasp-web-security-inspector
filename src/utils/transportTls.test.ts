@@ -142,8 +142,8 @@ describe('transportTls assessment', () => {
     });
 
     expect(report.overallStatus).toBe('inconclusive');
-    expect(report.checks.find(check => check.theme === 'certificate-trust')?.status).toBe('inconclusive');
-    expect(report.checks.find(check => check.theme === 'tls-posture')?.status).toBe('inconclusive');
+    expect(report.checks).toHaveLength(4);
+    expect(report.summary.inconclusive).toBe(4);
   });
 
   test('detects downgrade signals from HTTPS pages with HTTP references', () => {

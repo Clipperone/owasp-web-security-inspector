@@ -217,9 +217,7 @@ export type TransportTlsTheme =
   | 'https-adoption'
   | 'sensitive-flows'
   | 'hsts'
-  | 'downgrade-signals'
-  | 'certificate-trust'
-  | 'tls-posture';
+  | 'downgrade-signals';
 
 export type TransportTlsConfidence = 'high' | 'medium' | 'low';
 

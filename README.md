@@ -44,7 +44,6 @@ It does not verify, for example:
 - Incremental assessment workspace with a second-level tab model, starting from `Assessment > Headers`.
 - `Assessment > Transport & TLS` provides a passive browser-side review of HTTPS adoption, sensitive flow exposure, HSTS posture, downgrade signals, and transport evidence quality for the current session.
 - The Transport & TLS module uses only browser-observed requests, response headers, storage hints, and current-document DOM metadata such as HTTP form actions or absolute HTTP links. It does not probe endpoints, force requests, or simulate attacks.
-- Certificate trust and low-level TLS posture remain explicitly `Inconclusive` when the browser APIs used by the extension do not expose reliable details such as issuer, validity dates, TLS version, or cipher suite.
 - `Assessment > Headers` validates the active page response against the OWASP Secure Headers project and the public validator test suite semantics.
 - The Headers view is grouped into collapsible `Required`, `Advisory`, and `Should Be Absent` sections, each with per-section `Fail`, `Warn`, and `Pass` counters.
 - Missing required headers are reported as `Fail`, while required headers that are present but use a value different from the OWASP recommendation are reported as `Warn`.

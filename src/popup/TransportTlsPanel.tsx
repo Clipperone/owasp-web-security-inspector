@@ -20,8 +20,6 @@ const THEME_LABELS: Record<TransportTlsTheme, string> = {
   'sensitive-flows': 'Sensitive flows',
   hsts: 'HSTS',
   'downgrade-signals': 'Downgrade signals',
-  'certificate-trust': 'Certificate trust',
-  'tls-posture': 'TLS posture',
 };
 
 const THEME_ORDER: TransportTlsTheme[] = [
@@ -29,8 +27,6 @@ const THEME_ORDER: TransportTlsTheme[] = [
   'sensitive-flows',
   'hsts',
   'downgrade-signals',
-  'certificate-trust',
-  'tls-posture',
 ];
 
 function statusClasses(status: TransportTlsStatus): string {
