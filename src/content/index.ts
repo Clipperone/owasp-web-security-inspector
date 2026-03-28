@@ -25,6 +25,8 @@ import type {
   ExtensionResponse,
   StorageEntry,
   StorageScanResult,
+  TransportDomObservation,
+  TransportObservedForm,
   TokenHint,
   WebStorageArea,
 } from '../types';
@@ -65,6 +67,29 @@ const JWT_VALUE_PREFIX = 'ey';
  * 4096 chars is generous enough to hold even large JWT payloads.
  */
 const MAX_VALUE_LENGTH = 4096;
+
+const SENSITIVE_FIELD_PATTERNS: string[] = [
+  'user',
+  'username',
+  'email',
+  'login',
+  'password',
+  'pass',
+  'token',
+  'access',
+  'refresh',
+  'reset',
+  'session',
+  'bearer',
+  'secret',
+  'api',
+  'key',
+  'otp',
+  'code',
+];
+
+const MAX_OBSERVED_HTTP_LINKS = 20;
+const MAX_OBSERVED_FORMS = 12;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core scanning logic
@@ -174,6 +199,67 @@ function performScan(): StorageScanResult {
   };
 }
 
+function isSensitiveFieldName(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) return false;
+  return SENSITIVE_FIELD_PATTERNS.some(pattern => normalized.includes(pattern));
+}
+
+function resolveUrl(candidate: string | null): string {
+  if (!candidate || candidate.trim().length === 0) {
+    return window.location.href;
+  }
+
+  try {
+    return new URL(candidate, window.location.href).href;
+  } catch {
+    return candidate;
+  }
+}
+
+function scanForms(): TransportObservedForm[] {
+  const forms = Array.from(document.querySelectorAll('form'));
+
+  return forms.slice(0, MAX_OBSERVED_FORMS).map((form): TransportObservedForm => {
+    const action = resolveUrl(form.getAttribute('action'));
+    const method = (form.getAttribute('method') || 'get').toUpperCase();
+    const passwordFields = Array.from(form.querySelectorAll('input[type="password"]'));
+    const fieldNames = Array.from(form.querySelectorAll('input[name], textarea[name], select[name]'))
+      .map(element => element.getAttribute('name') || '')
+      .filter(Boolean);
+    const sensitiveFieldNames = Array.from(new Set(fieldNames.filter(isSensitiveFieldName))).slice(0, 8);
+
+    return {
+      action,
+      method,
+      hasPasswordField: passwordFields.length > 0,
+      passwordFieldCount: passwordFields.length,
+      sensitiveFieldNames,
+    };
+  });
+}
+
+function scanAbsoluteHttpLinks(): string[] {
+  const links = Array.from(document.querySelectorAll('a[href^="http://"]'));
+  return Array.from(new Set(
+    links
+      .map(link => link.getAttribute('href') || '')
+      .filter(Boolean),
+  )).slice(0, MAX_OBSERVED_HTTP_LINKS);
+}
+
+function performTransportObservation(): TransportDomObservation {
+  const forms = scanForms();
+
+  return {
+    pageUrl: window.location.href,
+    scannedAt: new Date().toISOString(),
+    absoluteHttpLinks: scanAbsoluteHttpLinks(),
+    forms,
+    passwordFieldCount: forms.reduce((sum, form) => sum + form.passwordFieldCount, 0),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry point — schedule scan during browser idle time
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,6 +290,21 @@ async function runScan(): Promise<StorageScanResult | null> {
   }
 }
 
+async function runTransportScan(): Promise<TransportDomObservation | null> {
+  try {
+    const result = performTransportObservation();
+
+    await chrome.runtime.sendMessage({
+      type: 'TRANSPORT_SCAN_RESULT',
+      payload: result,
+    });
+
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 chrome.runtime.onMessage.addListener(
   (
     message: ExtensionMessage,
@@ -211,7 +312,24 @@ chrome.runtime.onMessage.addListener(
     sendResponse: (response: ExtensionResponse<{ entries: number }>) => void,
   ) => {
     if (message.type !== 'RUN_STORAGE_SCAN') {
-      return false;
+      if (message.type !== 'RUN_TRANSPORT_SCAN') {
+        return false;
+      }
+
+      void (async () => {
+        const result = await runTransportScan();
+        if (result) {
+          sendResponse({
+            success: true,
+            data: { entries: result.forms.length + result.absoluteHttpLinks.length },
+          });
+          return;
+        }
+
+        sendResponse({ success: false, error: 'Transport scan failed.' });
+      })();
+
+      return true;
     }
 
     void (async () => {
@@ -237,7 +355,13 @@ chrome.runtime.onMessage.addListener(
  * do not expose `requestIdleCallback` (e.g. some WebExtension polyfills).
  */
 if (typeof requestIdleCallback === 'function') {
-  requestIdleCallback(() => { void runScan(); }, { timeout: 3000 });
+  requestIdleCallback(() => {
+    void runScan();
+    void runTransportScan();
+  }, { timeout: 3000 });
 } else {
-  setTimeout(() => { void runScan(); }, 200);
+  setTimeout(() => {
+    void runScan();
+    void runTransportScan();
+  }, 200);
 }

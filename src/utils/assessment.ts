@@ -222,6 +222,11 @@ function buildHeaderAssessmentSummary(checks: HeaderAssessmentCheck[]): Record<H
   });
 }
 
+function requiredHeaderStatus(hasObservedValue: boolean, isValid: boolean): HeaderAssessmentStatus {
+  if (!hasObservedValue) return 'fail';
+  return isValid ? 'pass' : 'warn';
+}
+
 function evaluatePermissionsPolicy(value: string): { ok: boolean; missing: string[] } {
   const normalized = value.toLowerCase().replace(/\s+/g, '');
   const missing: string[] = OWASP_PERMISSIONS_POLICY_DIRECTIVES.filter(directive => !normalized.includes(directive));
@@ -275,7 +280,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
       id: 'owasp-required-hsts',
       headerName: 'Strict-Transport-Security',
       kind: 'required',
-      status: isValid ? 'pass' : 'fail',
+      status: requiredHeaderStatus(hstsValues.length > 0, isValid),
       summary: isValid
         ? 'The primary response matches the HSTS values accepted by the OWASP validator.'
         : 'The HSTS value differs from the values accepted by the OWASP validator.',
@@ -293,7 +298,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-xfo',
     headerName: 'X-Frame-Options',
     kind: 'required',
-    status: xfoValues.length === 0 ? 'fail' : (xfoValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(xfoValues.length > 0, xfoValid),
     summary: xfoValues.length === 0
       ? 'The primary response is missing X-Frame-Options.'
       : (xfoValid
@@ -312,7 +317,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-xcto',
     headerName: 'X-Content-Type-Options',
     kind: 'required',
-    status: xctoValues.length === 0 ? 'fail' : (xctoValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(xctoValues.length > 0, xctoValid),
     summary: xctoValues.length === 0
       ? 'The primary response is missing X-Content-Type-Options.'
       : (xctoValid
@@ -331,7 +336,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-csp',
     headerName: 'Content-Security-Policy',
     kind: 'required',
-    status: cspValues.length === 0 ? 'fail' : (cspValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(cspValues.length > 0, cspValid),
     summary: cspValues.length === 0
       ? 'The primary response is missing Content-Security-Policy.'
       : (cspValid
@@ -350,7 +355,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-xpcdp',
     headerName: 'X-Permitted-Cross-Domain-Policies',
     kind: 'required',
-    status: xpcdpValues.length === 0 ? 'fail' : (xpcdpValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(xpcdpValues.length > 0, xpcdpValid),
     summary: xpcdpValues.length === 0
       ? 'The primary response is missing X-Permitted-Cross-Domain-Policies.'
       : (xpcdpValid
@@ -369,7 +374,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-referrer-policy',
     headerName: 'Referrer-Policy',
     kind: 'required',
-    status: referrerPolicyValues.length === 0 ? 'fail' : (referrerPolicyValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(referrerPolicyValues.length > 0, referrerPolicyValid),
     summary: referrerPolicyValues.length === 0
       ? 'The primary response is missing Referrer-Policy.'
       : (referrerPolicyValid
@@ -388,7 +393,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-coep',
     headerName: 'Cross-Origin-Embedder-Policy',
     kind: 'required',
-    status: coepValues.length === 0 ? 'fail' : (coepValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(coepValues.length > 0, coepValid),
     summary: coepValues.length === 0
       ? 'The primary response is missing Cross-Origin-Embedder-Policy.'
       : (coepValid
@@ -407,7 +412,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-coop',
     headerName: 'Cross-Origin-Opener-Policy',
     kind: 'required',
-    status: coopValues.length === 0 ? 'fail' : (coopValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(coopValues.length > 0, coopValid),
     summary: coopValues.length === 0
       ? 'The primary response is missing Cross-Origin-Opener-Policy.'
       : (coopValid
@@ -426,7 +431,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-corp',
     headerName: 'Cross-Origin-Resource-Policy',
     kind: 'required',
-    status: corpValues.length === 0 ? 'fail' : (corpValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(corpValues.length > 0, corpValid),
     summary: corpValues.length === 0
       ? 'The primary response is missing Cross-Origin-Resource-Policy.'
       : (corpValid
@@ -447,7 +452,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-permissions-policy',
     headerName: 'Permissions-Policy',
     kind: 'required',
-    status: permissionsPolicyValues.length === 0 ? 'fail' : (permissionsPolicyEvaluation.ok ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(permissionsPolicyValues.length > 0, permissionsPolicyEvaluation.ok),
     summary: permissionsPolicyValues.length === 0
       ? 'The primary response is missing Permissions-Policy.'
       : (permissionsPolicyEvaluation.ok
@@ -468,7 +473,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-cache-control',
     headerName: 'Cache-Control',
     kind: 'required',
-    status: cacheControlValues.length === 0 ? 'fail' : (cacheControlValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(cacheControlValues.length > 0, cacheControlValid),
     summary: cacheControlValues.length === 0
       ? 'The primary response is missing Cache-Control.'
       : (cacheControlValid
@@ -487,7 +492,7 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
     id: 'owasp-required-xdns-prefetch-control',
     headerName: 'X-DNS-Prefetch-Control',
     kind: 'required',
-    status: dnsPrefetchValues.length === 0 ? 'fail' : (dnsPrefetchValid ? 'pass' : 'fail'),
+    status: requiredHeaderStatus(dnsPrefetchValues.length > 0, dnsPrefetchValid),
     summary: dnsPrefetchValues.length === 0
       ? 'The primary response is missing X-DNS-Prefetch-Control.'
       : (dnsPrefetchValid
@@ -518,12 +523,15 @@ function buildRequiredHeaderChecks(primaryRequest: CachedRequest, logoutRequests
       const values = allHeaderValues(request, 'clear-site-data');
       return values.length === 0 || !values.some(value => sameCommaSeparatedValue(value, '"cache","cookies","storage"'));
     });
+    const missingClearSiteDataRequests = invalidLogoutRequests.filter(request => allHeaderValues(request, 'clear-site-data').length === 0);
     const logoutObservedValues = logoutRequests.flatMap(request => allHeaderValues(request, 'clear-site-data'));
     checks.push(headerCheck({
       id: 'owasp-required-clear-site-data',
       headerName: 'Clear-Site-Data',
       kind: 'required',
-      status: invalidLogoutRequests.length === 0 ? 'pass' : 'fail',
+      status: invalidLogoutRequests.length === 0
+        ? 'pass'
+        : (missingClearSiteDataRequests.length > 0 ? 'fail' : 'warn'),
       summary: invalidLogoutRequests.length === 0
         ? 'All captured logout-like responses match the Clear-Site-Data value expected by the OWASP validator.'
         : 'At least one captured logout-like response is missing Clear-Site-Data or uses a different value than the OWASP validator expects.',
@@ -566,19 +574,24 @@ function buildDisclosureHeaderChecks(primaryRequest: CachedRequest): HeaderAsses
   return OWASP_DISCLOSURE_HEADERS.map(headerName => {
     const observedValues = allHeaderValues(primaryRequest, headerName.toLowerCase());
     const present = observedValues.length > 0;
+    const exposesVersion = observedValues.some(value => /\d/.test(value));
 
     return headerCheck({
       id: `owasp-advisory-${headerName.toLowerCase()}`,
       headerName,
       kind: 'advisory',
-      status: present ? 'warn' : 'pass',
+      status: !present ? 'pass' : (exposesVersion ? 'fail' : 'warn'),
       summary: present
-        ? `${headerName} discloses implementation details that the OWASP project recommends removing.`
+        ? (exposesVersion
+          ? `${headerName} discloses implementation details and an explicit version string.`
+          : `${headerName} discloses implementation details that the OWASP project recommends removing.`)
         : `${headerName} is not exposed on the primary response.`,
       expected: 'Header should be absent when possible',
       observedValues,
       evidence: `Observed ${headerName} value: ${formatObservedValues(observedValues)}`,
-      remediation: `Remove or generalize ${headerName} at the application server, framework, or reverse proxy layer.`,
+      remediation: exposesVersion
+        ? `Remove ${headerName} entirely or strip version tokens at the application server, framework, or reverse proxy layer.`
+        : `Remove or generalize ${headerName} at the application server, framework, or reverse proxy layer.`,
       source: 'project',
     });
   });

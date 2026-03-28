@@ -207,7 +207,7 @@ describe('assessment utilities', () => {
     expect(deprecatedChecks.every(check => check.status === 'pass')).toBe(true);
   });
 
-  test('flags failing OWASP Secure Headers checks and project advisories', () => {
+  test('flags warning OWASP Secure Headers checks for mismatched values and escalates version disclosures', () => {
     const primaryRequest = createRequest({
       responseHeaders: [
         { name: 'Strict-Transport-Security', value: 'max-age=31536000' },
@@ -236,9 +236,61 @@ describe('assessment utilities', () => {
 
     expect(report.summary.fail).toBeGreaterThan(0);
     expect(report.summary.warn).toBeGreaterThan(0);
-    expect(cspCheck?.status).toBe('fail');
+    expect(cspCheck?.status).toBe('warn');
     expect(clearSiteDataCheck?.status).toBe('not-applicable');
     expect(expectCtCheck?.status).toBe('fail');
+    expect(serverCheck?.status).toBe('fail');
+  });
+
+  test('keeps advisory disclosures without version numbers as warn', () => {
+    const primaryRequest = createRequest({
+      responseHeaders: [
+        { name: 'Server', value: 'nginx' },
+        { name: 'X-Powered-By', value: 'PHP' },
+      ],
+    });
+
+    const report = getOwaspHeaderAssessment('https://app.example.com/account', [primaryRequest]);
+    const serverCheck = report.checks.find(check => check.headerName === 'Server');
+    const poweredByCheck = report.checks.find(check => check.headerName === 'X-Powered-By');
+
     expect(serverCheck?.status).toBe('warn');
+    expect(poweredByCheck?.status).toBe('warn');
+  });
+
+  test('keeps missing required headers as fail while mismatched values become warn', () => {
+    const primaryRequest = createRequest({
+      responseHeaders: [
+        { name: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      ],
+    });
+
+    const report = getOwaspHeaderAssessment('https://app.example.com/account', [primaryRequest]);
+    const xfoCheck = report.checks.find(check => check.headerName === 'X-Frame-Options');
+    const xctoCheck = report.checks.find(check => check.headerName === 'X-Content-Type-Options');
+
+    expect(xfoCheck?.status).toBe('warn');
+    expect(xctoCheck?.status).toBe('fail');
+  });
+
+  test('marks Clear-Site-Data as warn when logout responses have a different value but the header is present', () => {
+    const primaryRequest = createRequest({
+      responseHeaders: [
+        { name: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+      ],
+    });
+    const logoutRequest = createRequest({
+      method: 'POST',
+      resourceType: 'xmlhttprequest',
+      url: 'https://app.example.com/logout',
+      responseHeaders: [
+        { name: 'Clear-Site-Data', value: '"cache","cookies"' },
+      ],
+    });
+
+    const report = getOwaspHeaderAssessment('https://app.example.com/account', [primaryRequest, logoutRequest]);
+    const clearSiteDataCheck = report.checks.find(check => check.headerName === 'Clear-Site-Data');
+
+    expect(clearSiteDataCheck?.status).toBe('warn');
   });
 });

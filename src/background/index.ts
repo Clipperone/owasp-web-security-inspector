@@ -38,6 +38,7 @@ import type {
   HeaderRuleDraft,
   HeaderRule,
   StorageScanResult,
+  TransportDomObservation,
 } from '../types';
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
 import {
@@ -397,12 +398,29 @@ async function handleMessage(
         return { success: true, data: null };
       }
 
+      case 'TRANSPORT_SCAN_RESULT': {
+        const result = message.payload as TransportDomObservation;
+        const tabId = sender.tab?.id ?? await getFallbackTabId();
+        const cacheKey = `transportScan:${tabId}`;
+        await chrome.storage.session.set({ [cacheKey]: result });
+        return { success: true, data: null };
+      }
+
       case 'GET_STORAGE_TOKENS': {
         const [tab]    = await chrome.tabs.query({ active: true, currentWindow: true });
         const tabId    = tab?.id ?? -1;
         const cacheKey = `storageScan:${tabId}`;
         const stored   = await chrome.storage.session.get(cacheKey);
         const result   = (stored[cacheKey] as StorageScanResult | undefined) ?? null;
+        return { success: true, data: result };
+      }
+
+      case 'GET_TRANSPORT_OBSERVATIONS': {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabId = tab?.id ?? -1;
+        const cacheKey = `transportScan:${tabId}`;
+        const stored = await chrome.storage.session.get(cacheKey);
+        const result = (stored[cacheKey] as TransportDomObservation | undefined) ?? null;
         return { success: true, data: result };
       }
 
@@ -419,6 +437,23 @@ async function handleMessage(
           return {
             success: false,
             error: 'Storage scan is not available on this tab.',
+          };
+        }
+      }
+
+      case 'RUN_TRANSPORT_SCAN': {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id === undefined) {
+          return { success: false, error: 'No active tab available for transport scan.' };
+        }
+
+        try {
+          const response = await chrome.tabs.sendMessage(tab.id, { type: 'RUN_TRANSPORT_SCAN' });
+          return response as ExtensionResponse;
+        } catch {
+          return {
+            success: false,
+            error: 'Transport scan is not available on this tab.',
           };
         }
       }

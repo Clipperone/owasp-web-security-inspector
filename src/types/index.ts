@@ -153,6 +153,22 @@ export interface StorageScanResult {
   entries: StorageEntry[];
 }
 
+export interface TransportObservedForm {
+  action: string;
+  method: string;
+  hasPasswordField: boolean;
+  passwordFieldCount: number;
+  sensitiveFieldNames: string[];
+}
+
+export interface TransportDomObservation {
+  pageUrl: string;
+  scannedAt: string;
+  absoluteHttpLinks: string[];
+  forms: TransportObservedForm[];
+  passwordFieldCount: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Live response header cache types  (webRequest → background → popup)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,13 +211,64 @@ export interface HeaderAssessmentReport {
   summary: Record<HeaderAssessmentStatus, number>;
 }
 
+export type TransportTlsStatus = 'pass' | 'fail' | 'warn' | 'inconclusive';
+
+export type TransportTlsTheme =
+  | 'https-adoption'
+  | 'sensitive-flows'
+  | 'hsts'
+  | 'downgrade-signals'
+  | 'certificate-trust'
+  | 'tls-posture';
+
+export type TransportTlsConfidence = 'high' | 'medium' | 'low';
+
+export type TransportTlsCoverage = 'broad' | 'partial' | 'limited';
+
+export type TransportTlsEvidenceKind = 'request' | 'header' | 'dom' | 'storage';
+
+export interface TransportTlsEvidenceReference {
+  kind: TransportTlsEvidenceKind;
+  label: string;
+  detail: string;
+}
+
+export interface TransportTlsCheck {
+  id: string;
+  theme: TransportTlsTheme;
+  title: string;
+  status: TransportTlsStatus;
+  confidence: TransportTlsConfidence;
+  coverage: TransportTlsCoverage;
+  summary: string;
+  observedFacts: string[];
+  assessment: string;
+  guidance: string[];
+  evidenceRefs: TransportTlsEvidenceReference[];
+}
+
+export interface TransportTlsReport {
+  activeUrl: string;
+  primaryHost: string;
+  capturedRequestCount: number;
+  observedHttpRequestCount: number;
+  observedHttpsRequestCount: number;
+  domObservation: TransportDomObservation | null;
+  checks: TransportTlsCheck[];
+  summary: Record<TransportTlsStatus, number>;
+  overallStatus: TransportTlsStatus;
+  overview: string;
+  coverage: TransportTlsCoverage;
+  confidence: TransportTlsConfidence;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Assessment types  (aggregated OWASP-oriented findings in the popup)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AssessmentSeverity = 'high' | 'medium' | 'low' | 'info';
 
-export type AssessmentCategory = 'cookies' | 'tokens' | 'headers' | 'storage';
+export type AssessmentCategory = 'cookies' | 'tokens' | 'headers' | 'storage' | 'transport';
 
 export type CookieAssessmentCategory = 'session/auth' | 'csrf' | 'preference' | 'analytics/other';
 
@@ -259,6 +326,10 @@ export type MessageType =
   | 'STORAGE_SCAN_RESULT'   // content script pushes scan results
   | 'GET_STORAGE_TOKENS'    // popup requests cached results for active tab
   | 'RUN_STORAGE_SCAN'      // popup asks the active tab content script to rescan storage
+  // Passive transport observations (content → background, popup → background)
+  | 'TRANSPORT_SCAN_RESULT'
+  | 'GET_TRANSPORT_OBSERVATIONS'
+  | 'RUN_TRANSPORT_SCAN'
   // Tab info
   | 'GET_ACTIVE_TAB_INFO'
   // Live response header cache

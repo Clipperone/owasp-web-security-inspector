@@ -42,8 +42,14 @@ It does not verify, for example:
 ### Assessment
 
 - Incremental assessment workspace with a second-level tab model, starting from `Assessment > Headers`.
+- `Assessment > Transport & TLS` provides a passive browser-side review of HTTPS adoption, sensitive flow exposure, HSTS posture, downgrade signals, and transport evidence quality for the current session.
+- The Transport & TLS module uses only browser-observed requests, response headers, storage hints, and current-document DOM metadata such as HTTP form actions or absolute HTTP links. It does not probe endpoints, force requests, or simulate attacks.
+- Certificate trust and low-level TLS posture remain explicitly `Inconclusive` when the browser APIs used by the extension do not expose reliable details such as issuer, validity dates, TLS version, or cipher suite.
 - `Assessment > Headers` validates the active page response against the OWASP Secure Headers project and the public validator test suite semantics.
-- Exact header values are enforced where the validator expects exact matches, while `Clear-Site-Data` remains conditional on observing a logout-like response in the captured traffic.
+- The Headers view is grouped into collapsible `Required`, `Advisory`, and `Should Be Absent` sections, each with per-section `Fail`, `Warn`, and `Pass` counters.
+- Missing required headers are reported as `Fail`, while required headers that are present but use a value different from the OWASP recommendation are reported as `Warn`.
+- `Advisory` checks for disclosure headers such as `Server` and `X-Powered-By` escalate to `Fail` when the observed value exposes an explicit version number, and remain `Warn` when they disclose only the product name.
+- Exact header values are still checked where the OWASP validator expects exact matches, while `Clear-Site-Data` remains conditional on observing a logout-like response in the captured traffic.
 - Export of the current headers assessment view in Markdown or JSON.
 - Additional assessment sections for cookies, tokens, and storage can be introduced progressively without mixing all checks into a single panel.
 
@@ -73,7 +79,8 @@ It does not verify, for example:
 
 - Capture of `DOC`, `IFR`, and `XHR` responses observed from the active tab.
 - Security summary for the primary response.
-- Missing vs weak OWASP-relevant header checks.
+- Missing vs weak OWASP-relevant header checks, including distinction between absent required headers and present-but-noncompliant values.
+- Passive transport evidence used by the Transport & TLS assessment, including observed HTTP versus HTTPS requests and document-level HTTP references when available.
 
 ## Runtime And Stack
 
