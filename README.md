@@ -49,8 +49,8 @@ It does not verify, for example:
 - Missing required headers are reported as `Fail`, while required headers that are present but use a value different from the OWASP recommendation are reported as `Warn`.
 - `Advisory` checks for disclosure headers such as `Server` and `X-Powered-By` escalate to `Fail` when the observed value exposes an explicit version number, and remain `Warn` when they disclose only the product name.
 - Exact header values are still checked where the OWASP validator expects exact matches, while `Clear-Site-Data` remains conditional on observing a logout-like response in the captured traffic.
-- Export of the current headers assessment view in Markdown or JSON.
-- Additional assessment sections for cookies, tokens, and storage can be introduced progressively without mixing all checks into a single panel.
+- `Assessment > Cookies`, `Assessment > Tokens`, and `Assessment > Storage` surface the cookie, JWT/opaque-token, and web-storage findings produced by the same engine, each in its own subtab.
+- `Copy MD` and `Copy JSON` export a single report covering every assessment category (headers, transport, cookies, tokens, storage).
 
 ### Cookies
 
@@ -84,6 +84,7 @@ It does not verify, for example:
 ## Runtime And Stack
 
 - Chrome Extension Manifest V3
+- Side panel UI via the `chrome.sidePanel` API
 - React 18
 - TypeScript 5 with strict mode
 - Vite 5 with `@crxjs/vite-plugin`
@@ -93,7 +94,7 @@ It does not verify, for example:
 
 - Node.js 20+
 - npm 10+
-- Chrome 109+
+- Chrome 114+ (required by the side panel)
 
 ## Development Workflow
 
@@ -119,7 +120,7 @@ npm run dev
 npm run generate-icons
 ```
 
-Load the unpacked extension from `dist/` in `chrome://extensions` with Developer mode enabled.
+Load the unpacked extension from `dist/` in `chrome://extensions` with Developer mode enabled, then click the toolbar icon to open the side panel.
 
 ## Release Flow
 
@@ -178,31 +179,35 @@ src/
     index.ts
   content/
     index.ts
-  popup/
-    App.tsx
+  sidepanel/
+    Panel.tsx
     AssessmentTab.tsx
     CookieEditorForm.tsx
     CookieTab.tsx
     CurrentHeadersTab.tsx
+    FindingCard.tsx
     HeaderRuleRow.tsx
     HeadersTab.tsx
+    TokensTab.tsx
+    TransportTlsPanel.tsx
     index.css
     index.html
     main.tsx
-    Popup.tsx
-    TokensTab.tsx
     useDismissOnOutsideClick.ts
+    ui/                 # shared design system primitives
   types/
     index.ts
   utils/
+    assessment/         # pure assessment engine, split by concern
+    transportTls/       # passive transport & TLS assessment
     assessment.test.ts
-    assessment.ts
     cookieUtils.ts
     exporter.ts
     headerUtils.ts
     index.ts
     jwtUtils.test.ts
     jwtUtils.ts
+    report.ts           # unified Markdown/JSON report across all categories
     storageUtils.ts
 ```
 
@@ -210,10 +215,13 @@ src/
 
 - `src/background/index.ts`: background service worker for message routing, cached request/header data, and DNR rule coordination.
 - `src/content/index.ts`: storage scan logic executed in the page context.
-- `src/popup/`: popup UI, including cookies, headers, tokens, response inspection, and the Assessment tab.
-- `src/utils/assessment.ts`: pure assessment logic for cookies, `Set-Cookie`, headers, and token heuristics.
+- `src/sidepanel/`: side panel UI, including cookies, headers, tokens, response inspection, and the Assessment tab; `ui/` holds the shared design system.
+- `src/utils/assessment/`: pure assessment logic for cookies, `Set-Cookie`, headers, and token heuristics, split into focused modules behind a barrel.
+- `src/utils/report.ts`: unified Markdown/JSON report across all assessment categories.
 - `src/utils/jwtUtils.ts`: local JWT parsing and structural validation helpers.
 - `src/utils/*.test.ts`: pure-module unit tests executed with Vitest.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full component map and message flow, and [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ## Permissions
 
@@ -222,6 +230,7 @@ src/
 - `storage`: persist rules and settings
 - `activeTab`: resolve the active page context
 - `webRequest`: capture response headers for inspection
+- `sidePanel`: render the review UI in the browser side panel
 - `host_permissions: <all_urls>`: operate across sites
 
 ## Privacy

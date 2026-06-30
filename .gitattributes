@@ -1,0 +1,7 @@
+# Normalize line endings: store as LF in the repo and check out as LF.
+# Keeps diffs clean and silences CRLF conversion warnings on Windows.
+* text=auto eol=lf
+
+# Binary assets must never be normalized.
+*.png binary
+*.ico binary

@@ -25,7 +25,7 @@ npm run build
 What each command does and what was verified:
 
 - `npm run test`
-  Runs `vitest run`. This currently passes with 2 test files / 7 tests. It emits Vite/CRX deprecation warnings about `esbuild` and `rolldownOptions`, but the command succeeds.
+  Runs `vitest run`. This currently passes with 3 test files / 19 tests. It emits Vite/CRX deprecation warnings about `esbuild` and `rolldownOptions`, but the command succeeds.
 - `npm run lint`
   Runs `tsc --noEmit`. Success is silent.
 - `npm run eslint`
@@ -46,9 +46,9 @@ Other scripted steps:
 - `npm run release:patch|minor|major`
   Real release flow. It edits `package.json`, `package-lock.json`, and `manifest.json`, commits, and tags. Do not run unless explicitly asked.
 - `npm run generate-icons`
-  Mutates files under `public/icons`. The script currently writes `icon16.png`-style names, while the manifest uses `16px.png`-style names. Do not assume it refreshes the icons actually referenced by the extension without checking filenames first.
+  Mutates files under `public/icons`, writing `<size>px.png` placeholder names that match the icons referenced in `manifest.json`. Replace them with real artwork before publishing.
 
-There are no `.github/workflows` files and no remote CI definition in the repo. Pre-checkin validation is local.
+CI runs `npm ci`, `npm run lint`, `npm run eslint`, `npm run test`, and `npm run build` on push and pull request via `.github/workflows/ci.yml`. Run the same sequence locally before checking in.
 
 ## Project Layout
 
@@ -66,15 +66,17 @@ Top-level files that matter most:
 Important source directories:
 
 - `src/background/index.ts`
-  MV3 service worker. Owns install/update lifecycle, dynamic declarativeNetRequest rule sync, response-header cache, and the popup/content message router.
+  MV3 service worker. Owns install/update lifecycle, dynamic declarativeNetRequest rule sync, response-header cache, the side panel/content message router, and opening the side panel on toolbar-icon click.
 - `src/content/index.ts`
   Content script injected on all pages. Scans `localStorage` and `sessionStorage` via `requestIdleCallback` and reports findings back to background.
-- `src/popup/`
-  React popup UI. `Popup.tsx` is the tab shell. Main tabs are `AssessmentTab.tsx`, `CookieTab.tsx`, `CurrentHeadersTab.tsx`, `HeadersTab.tsx`, and `TokensTab.tsx`.
+- `src/sidepanel/`
+  React UI served through the `chrome.sidePanel` API. `Panel.tsx` is the tab shell. Main tabs are `AssessmentTab.tsx`, `CookieTab.tsx`, `CurrentHeadersTab.tsx`, `HeadersTab.tsx`, and `TokensTab.tsx`. `ui/` holds the shared design system primitives and `status.ts` tone map.
 - `src/types/index.ts`
   Shared source of truth for message contracts, assessment models, header rules, token/storage types, and extension settings.
-- `src/utils/assessment.ts`
-  Pure browser-side assessment engine for cookies, `Set-Cookie`, headers, and tokens.
+- `src/utils/assessment/`
+  Pure browser-side assessment engine for cookies, `Set-Cookie`, headers, and tokens, split into focused modules (`shared`, `classification`, `setCookie`, `headers`, `cookies`, `tokens`, `findings`) behind an `index.ts` barrel. Import from `../utils/assessment`.
+- `src/utils/report.ts`
+  Unified Markdown/JSON report across all assessment categories.
 - `src/utils/storageUtils.ts`
   Typed wrapper around `chrome.storage.local` for rules/settings.
 - `src/utils/jwtUtils.ts`
@@ -91,13 +93,13 @@ Important source directories:
 3. Background script errors are intentionally swallowed in catch blocks. Do not add noisy logging there.
 4. In `src/background/index.ts`, keep importing `storageUtils` directly from `../utils/storageUtils`, not the barrel.
 5. Use `chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS`, not the string `'modifyHeaders'`.
-6. All popup styling is Tailwind-based; `src/popup/index.css` only contains Tailwind directives. Do not introduce CSS modules or inline styles unless the project style changes.
+6. All UI styling is Tailwind-based; `src/sidepanel/index.css` only contains Tailwind directives. Build UI from the `src/sidepanel/ui/` primitives and the `status.ts` tone map instead of hand-written colour strings. Do not introduce CSS modules or inline styles unless the project style changes.
 7. TypeScript is strict. Unused imports, locals, or parameters fail validation.
 8. `chrome.cookies` timestamps are in seconds, and `chrome.cookies.SameSiteStatus` uses Chrome's string union values.
 
 ## Practical Guidance For Changes
 
-- If you touch popup behavior or copy, run at least `npm run lint`, `npm run eslint`, and `npm run build`.
+- If you touch side panel behavior or copy, run at least `npm run lint`, `npm run eslint`, and `npm run build`.
 - If you touch `src/utils/assessment.ts` or `src/utils/jwtUtils.ts`, run `npm run test` too.
 - `dist/` is generated output and git-ignored. Do not commit it.
 - The repo root is small; when searching, prefer the files above before broad codebase exploration.

@@ -21,6 +21,11 @@ Trasformare l'estensione da strumento di ispezione e modifica in uno strumento d
 - ESLint, lint TypeScript e build funzionanti
 - nuova tab `Assessment` con finding automatici su cookie, storage token e header
 - export del report di assessment in Markdown e JSON
+- migrazione della UI al Chrome side panel (`chrome.sidePanel`, Chrome 114+)
+- Assessment unificato: sottotab `Cookies`, `Tokens` e `Storage` ora attivi accanto a `Headers` e `Transport & TLS`, alimentati dallo stesso motore
+- design system condiviso (`src/sidepanel/ui`) e report unico Markdown/JSON su tutte le categorie (`src/utils/report.ts`)
+- modularizzazione del motore di assessment in `src/utils/assessment/`
+- scaffolding open source: `LICENSE` (MIT), `CONTRIBUTING.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, CI GitHub Actions
 
 ### Da completare
 

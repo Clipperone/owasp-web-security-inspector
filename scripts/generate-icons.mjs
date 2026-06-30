@@ -21,9 +21,10 @@ const sizes = [16, 32, 48, 128];
 
 for (const size of sizes) {
   const buf = Buffer.from(PLACEHOLDER_1X1_PNG, 'base64');
-  const dest = join(iconsDir, `icon${size}.png`);
+  // File names must match the icons referenced in manifest.json (`<size>px.png`).
+  const dest = join(iconsDir, `${size}px.png`);
   writeFileSync(dest, buf);
-  console.log(`✓ public/icons/icon${size}.png — placeholder created`);
+  console.log(`✓ public/icons/${size}px.png — placeholder created`);
 }
 
 console.log('\nReplace these files with real artwork before publishing.');
