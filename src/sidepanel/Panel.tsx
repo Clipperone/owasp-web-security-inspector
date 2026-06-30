@@ -15,7 +15,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'tokens',   label: 'Tokens'           },
 ];
 
-export const Popup: React.FC = () => {
+export const Panel: React.FC = () => {
   const [active, setActive]         = useState<TabId>('assessment');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
 
@@ -25,7 +25,7 @@ export const Popup: React.FC = () => {
   };
 
   return (
-    <div className="w-[580px] h-[680px] bg-gray-950 text-gray-100 flex flex-col overflow-hidden font-mono text-xs">
+    <div className="w-full h-screen bg-gray-950 text-gray-100 flex flex-col overflow-hidden font-mono text-xs">
 
       {/* ── App header ─────────────────────────────────────────────────── */}
       <header className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-900 border-b border-gray-800 shrink-0">
@@ -48,13 +48,13 @@ export const Popup: React.FC = () => {
       </header>
 
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
-      <nav className="flex border-b border-gray-800 bg-gray-900/40 shrink-0">
+      <nav className="flex border-b border-gray-800 bg-gray-900/40 shrink-0 overflow-x-auto">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActive(tab.id)}
             className={[
-              'px-5 py-2.5 text-[11px] font-medium tracking-wide transition-all duration-150 border-b-2 -mb-px select-none',
+              'px-5 py-2.5 text-[11px] font-medium tracking-wide transition-all duration-150 border-b-2 -mb-px select-none whitespace-nowrap',
               active === tab.id
                 ? 'text-blue-400 border-blue-500 bg-gray-950/60'
                 : 'text-gray-500 border-transparent hover:text-gray-300 hover:border-gray-700',

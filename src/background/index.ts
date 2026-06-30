@@ -76,6 +76,13 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   })();
 });
 
+// Open the side panel when the user clicks the toolbar icon. Wrapped in a
+// silent catch so a Chrome build without the sidePanel API never crashes the
+// service worker (the manifest already gates install on Chrome 114+).
+chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
+  // Silent — the side panel is a progressive enhancement of the toolbar action.
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DNR helpers
 // ─────────────────────────────────────────────────────────────────────────────

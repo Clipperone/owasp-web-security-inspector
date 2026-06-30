@@ -4,19 +4,21 @@
   "version": "0.1.0",
   "description": "Inspect and assess cookies, tokens, Set-Cookie responses, and HTTP security headers using OWASP-inspired browser-side review.",
 
+  "minimum_chrome_version": "114",
+
   "permissions": [
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
     "storage",
     "cookies",
     "activeTab",
-    "webRequest"
+    "webRequest",
+    "sidePanel"
   ],
 
   "host_permissions": ["<all_urls>"],
 
   "action": {
-    "default_popup": "src/popup/index.html",
     "default_title": "OWASP Web Security Inspector",
     "default_icon": {
       "16":  "icons/16px.png",
@@ -24,6 +26,10 @@
       "48":  "icons/48px.png",
       "128": "icons/128px.png"
     }
+  },
+
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
   },
 
   "background": {
