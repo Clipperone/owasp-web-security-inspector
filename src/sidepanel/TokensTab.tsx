@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import type { AssessmentFinding, StorageEntry, StorageScanResult, TokenData } from '../types';
+import type { StorageEntry, StorageScanResult, TokenData } from '../types';
 import { assessManualToken } from '../utils/assessment';
 import { decodeJwt, formatExpiry, isJwt } from '../utils/jwtUtils';
+import { StatusBadge, severityLabel, severityTone } from './ui';
 
 // ── Timestamp helper ───────────────────────────────────────────────────────────
 
@@ -39,19 +40,6 @@ const IconChevron: React.FC<{ open: boolean }> = ({ open }) => (
 );
 
 const TIMESTAMP_CLAIMS = new Set(['exp', 'iat', 'nbf']);
-
-function manualRiskClasses(severity: AssessmentFinding['severity']): string {
-  switch (severity) {
-    case 'high':
-      return 'text-red-300 bg-red-950/40 border-red-900/60';
-    case 'medium':
-      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
-    case 'low':
-      return 'text-sky-300 bg-sky-950/40 border-sky-900/60';
-    case 'info':
-      return 'text-gray-300 bg-gray-900/60 border-gray-700';
-  }
-}
 
 /** Render a JSON value as a syntax-highlighted tree (pure CSS, no lib). */
 function JsonTree({ value, depth = 0, parentKey }: { value: unknown; depth?: number; parentKey?: string }): React.ReactElement {
@@ -411,9 +399,7 @@ export const TokensTab: React.FC<{
               <div className="space-y-1.5">
                 {manualFindings.map(finding => (
                   <div key={finding.id} className="flex items-start gap-2">
-                    <span className={`px-1.5 py-px text-[9px] font-bold border rounded shrink-0 ${manualRiskClasses(finding.severity)}`}>
-                      {finding.severity.toUpperCase()}
-                    </span>
+                    <StatusBadge tone={severityTone(finding.severity)}>{severityLabel(finding.severity).toUpperCase()}</StatusBadge>
                     <div className="min-w-0">
                       <p className="text-[11px] text-gray-200 leading-relaxed">{finding.title}</p>
                       <p className="text-[10px] text-gray-500 leading-relaxed">{finding.summary}</p>

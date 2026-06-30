@@ -9,50 +9,31 @@ import type {
   StorageScanResult,
   TransportDomObservation,
 } from '../types';
-import { getOwaspHeaderAssessment } from '../utils/assessment';
+import { buildAssessmentFindings, getOwaspHeaderAssessment } from '../utils/assessment';
 import { buildTransportTlsSection } from '../utils/transportTls';
-import { buildTransportTlsMarkdownReport, TransportTlsPanel } from './TransportTlsPanel';
+import { buildFullAssessmentReport, renderReportJson, renderReportMarkdown } from '../utils/report';
+import { TransportTlsPanel } from './TransportTlsPanel';
+import { FindingList } from './FindingCard';
+import {
+  DisclosureCard,
+  EmptyState,
+  Field,
+  Section,
+  StatusBadge,
+  headerStatusLabel,
+  headerStatusTone,
+  toneTextClasses,
+} from './ui';
 
-type AssessmentSubtabId = 'transport' | 'headers' | 'cookies' | 'tokens' | 'storage';
+type AssessmentSubtabId = 'headers' | 'transport' | 'cookies' | 'tokens' | 'storage';
 
-const ASSESSMENT_SUBTABS: Array<{
-  id: AssessmentSubtabId;
-  label: string;
-  enabled: boolean;
-}> = [
-  {
-    id: 'transport',
-    label: 'Transport & TLS',
-    enabled: true,
-  },
-  {
-    id: 'headers',
-    label: 'Headers',
-    enabled: true,
-  },
-  {
-    id: 'cookies',
-    label: 'Cookies',
-    enabled: false,
-  },
-  {
-    id: 'tokens',
-    label: 'Tokens',
-    enabled: false,
-  },
-  {
-    id: 'storage',
-    label: 'Storage',
-    enabled: false,
-  },
+const ASSESSMENT_SUBTABS: Array<{ id: AssessmentSubtabId; label: string }> = [
+  { id: 'headers', label: 'Headers' },
+  { id: 'transport', label: 'Transport' },
+  { id: 'cookies', label: 'Cookies' },
+  { id: 'tokens', label: 'Tokens' },
+  { id: 'storage', label: 'Storage' },
 ];
-
-const STATUS_LABELS: Record<HeaderAssessmentStatus, string> = {
-  pass: 'Pass',
-  fail: 'Fail',
-  warn: 'Warn',
-  'not-applicable': 'N/A',
-};
 
 const KIND_LABELS: Record<HeaderAssessmentKind, string> = {
   required: 'Required',
@@ -68,19 +49,6 @@ const STATUS_SORT_WEIGHT: Record<HeaderAssessmentStatus, number> = {
 };
 
 const HEADER_SECTION_ORDER: HeaderAssessmentKind[] = ['required', 'advisory', 'deprecated'];
-
-function statusClasses(status: HeaderAssessmentStatus): string {
-  switch (status) {
-    case 'pass':
-      return 'text-emerald-300 bg-emerald-950/40 border-emerald-900/60';
-    case 'fail':
-      return 'text-red-300 bg-red-950/40 border-red-900/60';
-    case 'warn':
-      return 'text-amber-300 bg-amber-950/40 border-amber-900/60';
-    case 'not-applicable':
-      return 'text-gray-300 bg-gray-900/60 border-gray-700';
-  }
-}
 
 function groupChecks(report: HeaderAssessmentReport): Record<HeaderAssessmentKind, HeaderAssessmentCheck[]> {
   return report.checks.reduce<Record<HeaderAssessmentKind, HeaderAssessmentCheck[]>>((acc, check) => {
@@ -101,151 +69,59 @@ function sortChecks(checks: HeaderAssessmentCheck[]): HeaderAssessmentCheck[] {
   });
 }
 
-function summarizeChecks(checks: HeaderAssessmentCheck[]): Pick<Record<HeaderAssessmentStatus, number>, 'fail' | 'warn' | 'pass'> {
+function summarizeChecks(checks: HeaderAssessmentCheck[]): { fail: number; warn: number; pass: number } {
   return checks.reduce((acc, check) => {
     if (check.status === 'fail' || check.status === 'warn' || check.status === 'pass') {
       acc[check.status] += 1;
     }
-
     return acc;
-  }, {
-    fail: 0,
-    warn: 0,
-    pass: 0,
-  });
-}
-
-function buildMarkdownReport(report: HeaderAssessmentReport): string {
-  const lines = [
-    '# OWASP Secure Headers Assessment',
-    '',
-    `Generated: ${new Date().toISOString()}`,
-    `Active URL: ${report.activeUrl || 'unknown'}`,
-    `Captured requests: ${report.capturedRequestCount}`,
-    `Logout-like requests: ${report.logoutRequestCount}`,
-    `Primary response: ${report.primaryRequest ? `${report.primaryRequest.method} ${report.primaryRequest.url} (${report.primaryRequest.statusCode})` : 'not captured'}`,
-    '',
-    '## Summary',
-    '',
-    `- Pass: ${report.summary.pass}`,
-    `- Fail: ${report.summary.fail}`,
-    `- Warn: ${report.summary.warn}`,
-    `- Not applicable: ${report.summary['not-applicable']}`,
-    '',
-  ];
-
-  const grouped = groupChecks(report);
-  const sections = HEADER_SECTION_ORDER;
-
-  sections.forEach(section => {
-    lines.push(`## ${KIND_LABELS[section]}`);
-    lines.push('');
-
-    if (grouped[section].length === 0) {
-      lines.push('- No checks in this section.');
-      lines.push('');
-      return;
-    }
-
-    grouped[section].forEach((check, index) => {
-      lines.push(`${index + 1}. [${STATUS_LABELS[check.status].toUpperCase()}] ${check.headerName}`);
-      lines.push(`Summary: ${check.summary}`);
-      lines.push(`Expected: ${check.expected}`);
-      lines.push(`Observed: ${check.observedValues.length > 0 ? check.observedValues.join(' | ') : 'Not observed'}`);
-      lines.push(`Evidence: ${check.evidence}`);
-      lines.push(`Remediation: ${check.remediation}`);
-      lines.push('');
-    });
-  });
-
-  return lines.join('\n');
+  }, { fail: 0, warn: 0, pass: 0 });
 }
 
 function HeaderCheckCard({ check }: { check: HeaderAssessmentCheck }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <div className="border-b border-gray-800/60 last:border-b-0">
-      <button
-        type="button"
-        onClick={() => setExpanded(current => !current)}
-        className="w-full px-3 py-2 text-left hover:bg-gray-900/20 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className={`px-1.5 py-px text-[9px] font-bold border rounded ${statusClasses(check.status)}`}>
-            {STATUS_LABELS[check.status].toUpperCase()}
-          </span>
-          <h3 className="text-[12px] text-gray-100 font-semibold flex-1 min-w-0">{check.headerName}</h3>
-          <span className="text-[11px] text-gray-500 shrink-0">{expanded ? '−' : '+'}</span>
-        </div>
-      </button>
-      {expanded && (
-        <div className="px-3 pb-2 space-y-1.5">
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Summary</p>
-            <p className="text-[11px] text-gray-300 leading-relaxed">{check.summary}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Expected</p>
-            <p className="text-[11px] text-gray-400 leading-relaxed">{check.expected}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Observed</p>
-            <p className="text-[11px] text-gray-300 font-mono break-words">
-              {check.observedValues.length > 0 ? check.observedValues.join(' | ') : 'Not observed'}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Evidence</p>
-            <p className="text-[11px] text-gray-300 leading-relaxed">{check.evidence}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mb-1">Remediation</p>
-            <p className="text-[11px] text-gray-400 leading-relaxed">{check.remediation}</p>
-          </div>
-        </div>
-      )}
-    </div>
+    <DisclosureCard
+      badge={<StatusBadge tone={headerStatusTone(check.status)}>{headerStatusLabel(check.status).toUpperCase()}</StatusBadge>}
+      title={check.headerName}
+    >
+      <Field label="Summary">{check.summary}</Field>
+      <Field label="Expected">{check.expected}</Field>
+      <Field label="Observed" mono>
+        {check.observedValues.length > 0 ? check.observedValues.join(' | ') : 'Not observed'}
+      </Field>
+      <Field label="Evidence">{check.evidence}</Field>
+      <Field label="Remediation">{check.remediation}</Field>
+    </DisclosureCard>
   );
 }
 
 function HeaderCheckSection({
   kind,
   checks,
+  defaultOpen,
 }: {
   kind: HeaderAssessmentKind;
   checks: HeaderAssessmentCheck[];
+  defaultOpen?: boolean;
 }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(false);
   const orderedChecks = sortChecks(checks);
   const summary = summarizeChecks(checks);
 
   return (
-    <section className="border border-gray-800 rounded overflow-hidden bg-gray-950/20">
-      <button
-        type="button"
-        onClick={() => setExpanded(current => !current)}
-        className="w-full px-3 py-2 text-left bg-gray-950/40 hover:bg-gray-900/30 transition-colors"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[12px] text-gray-100 font-semibold shrink-0">{KIND_LABELS[kind]}</p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0 text-[10px]">
-            <span className="text-[10px] text-gray-500">{checks.length} checks</span>
-            <span className="text-red-300">Fail {summary.fail}</span>
-            <span className="text-amber-300">Warn {summary.warn}</span>
-            <span className="text-emerald-300">Pass {summary.pass}</span>
-            <span className="text-[11px] text-gray-500">{expanded ? '−' : '+'}</span>
-          </div>
-        </div>
-      </button>
-      {expanded && (
-        <div className="border-t border-gray-800">
-          {orderedChecks.map(check => <HeaderCheckCard key={check.id} check={check} />)}
-        </div>
-      )}
-    </section>
+    <Section
+      title={KIND_LABELS[kind]}
+      defaultOpen={defaultOpen}
+      meta={
+        <>
+          <span className="text-gray-500">{checks.length} checks</span>
+          <span className={toneTextClasses('bad')}>Fail {summary.fail}</span>
+          <span className={toneTextClasses('warn')}>Warn {summary.warn}</span>
+          <span className={toneTextClasses('ok')}>Pass {summary.pass}</span>
+        </>
+      }
+    >
+      {orderedChecks.map(check => <HeaderCheckCard key={check.id} check={check} />)}
+    </Section>
   );
 }
 
@@ -253,6 +129,7 @@ export const AssessmentTab: React.FC = () => {
   const [activeSubtab, setActiveSubtab] = useState<AssessmentSubtabId>('headers');
   const [tabInfo, setTabInfo] = useState<ActiveTabInfo | null>(null);
   const [requests, setRequests] = useState<CachedRequest[]>([]);
+  const [cookies, setCookies] = useState<chrome.cookies.Cookie[]>([]);
   const [transportObservation, setTransportObservation] = useState<TransportDomObservation | null>(null);
   const [storageScan, setStorageScan] = useState<StorageScanResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -277,15 +154,17 @@ export const AssessmentTab: React.FC = () => {
         chrome.runtime.sendMessage({ type: 'RUN_STORAGE_SCAN' }).catch(() => null),
       ]);
 
-      const [headersResponse, transportResponse, storageResponse] = await Promise.all([
+      const [headersResponse, transportResponse, storageResponse, cookiesResponse] = await Promise.all([
         chrome.runtime.sendMessage({ type: 'GET_TAB_HEADERS', payload: info.tabId }),
         chrome.runtime.sendMessage({ type: 'GET_TRANSPORT_OBSERVATIONS' }),
         chrome.runtime.sendMessage({ type: 'GET_STORAGE_TOKENS' }),
+        chrome.runtime.sendMessage({ type: 'GET_COOKIES', payload: info.url }),
       ]);
 
       setRequests(headersResponse?.success ? (headersResponse.data as CachedRequest[] ?? []) : []);
       setTransportObservation(transportResponse?.success ? (transportResponse.data as TransportDomObservation | null ?? null) : null);
       setStorageScan(storageResponse?.success ? (storageResponse.data as StorageScanResult | null ?? null) : null);
+      setCookies(cookiesResponse?.success ? (cookiesResponse.data as chrome.cookies.Cookie[] ?? []) : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assessment failed to load.');
     } finally {
@@ -297,42 +176,66 @@ export const AssessmentTab: React.FC = () => {
     void load();
   }, [load]);
 
-  const headerReport = useMemo(
-    () => getOwaspHeaderAssessment(tabInfo?.url ?? '', requests),
-    [requests, tabInfo?.url],
-  );
+  const activeUrl = tabInfo?.url ?? '';
+  const storageEntries = useMemo(() => storageScan?.entries ?? [], [storageScan]);
 
+  const headerReport = useMemo(() => getOwaspHeaderAssessment(activeUrl, requests), [activeUrl, requests]);
   const groupedChecks = useMemo(() => groupChecks(headerReport), [headerReport]);
   const transportReport = useMemo(
     () => buildTransportTlsSection({
-      activeUrl: tabInfo?.url ?? '',
+      activeUrl,
       requests,
       domObservation: transportObservation,
       storageScan,
     }),
-    [requests, storageScan, tabInfo?.url, transportObservation],
+    [activeUrl, requests, storageScan, transportObservation],
   );
 
+  const findings = useMemo(
+    () => buildAssessmentFindings({ activeUrl, cookies, storageEntries, requests }),
+    [activeUrl, cookies, storageEntries, requests],
+  );
+
+  const cookieFindings = useMemo(() => findings.filter(f => f.category === 'cookies'), [findings]);
+  const tokenFindings = useMemo(() => findings.filter(f => f.category === 'tokens'), [findings]);
+  const storageFindings = useMemo(() => findings.filter(f => f.category === 'storage'), [findings]);
+  const headerFindings = useMemo(() => findings.filter(f => f.category === 'headers'), [findings]);
+
   const copyReport = useCallback(async (format: 'markdown' | 'json') => {
-    const reportPayload = activeSubtab === 'transport'
-      ? (format === 'markdown'
-        ? buildTransportTlsMarkdownReport(transportReport)
-        : JSON.stringify(transportReport, null, 2))
-      : (format === 'markdown'
-        ? buildMarkdownReport(headerReport)
-        : JSON.stringify(headerReport, null, 2));
+    const report = buildFullAssessmentReport({
+      generatedAt: new Date().toISOString(),
+      activeUrl,
+      headers: headerReport,
+      transport: transportReport,
+      findings,
+    });
+    const payload = format === 'markdown' ? renderReportMarkdown(report) : renderReportJson(report);
 
     try {
-      await navigator.clipboard.writeText(reportPayload);
-      setCopyToast(format === 'markdown'
-        ? (activeSubtab === 'transport' ? 'Transport markdown report copied.' : 'Markdown report copied.')
-        : (activeSubtab === 'transport' ? 'Transport JSON report copied.' : 'JSON report copied.'));
+      await navigator.clipboard.writeText(payload);
+      setCopyToast(format === 'markdown' ? 'Full Markdown report copied.' : 'Full JSON report copied.');
       window.setTimeout(() => setCopyToast(null), 2200);
     } catch {
       setCopyToast('Clipboard copy failed.');
       window.setTimeout(() => setCopyToast(null), 2200);
     }
-  }, [activeSubtab, headerReport, transportReport]);
+  }, [activeUrl, headerReport, transportReport, findings]);
+
+  const metaLine = (() => {
+    switch (activeSubtab) {
+      case 'transport':
+        return `HTTPS requests: ${transportReport.observedHttpsRequestCount} · HTTP requests: ${transportReport.observedHttpRequestCount} · HTTP links in DOM: ${transportObservation?.absoluteHttpLinks.length ?? 0}`;
+      case 'cookies':
+        return `Cookies in jar: ${cookies.length} · Cookie findings: ${cookieFindings.length}`;
+      case 'tokens':
+        return `Token findings: ${tokenFindings.length}`;
+      case 'storage':
+        return `Storage entries scanned: ${storageEntries.length} · Storage findings: ${storageFindings.length}`;
+      case 'headers':
+      default:
+        return `Captured requests: ${headerReport.capturedRequestCount} · Logout-like: ${headerReport.logoutRequestCount} · Observed headers: ${headerReport.observedHeaderNames.length}`;
+    }
+  })();
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -341,8 +244,8 @@ export const AssessmentTab: React.FC = () => {
           <p className="text-[10px] text-gray-500 uppercase tracking-widest font-medium select-none">
             Browser security assessment
           </p>
-          <p className="text-[11px] text-gray-400 font-mono truncate" title={tabInfo?.url ?? ''}>
-            {tabInfo?.url ?? 'Loading active tab...'}
+          <p className="text-[11px] text-gray-400 font-mono truncate" title={activeUrl}>
+            {activeUrl || 'Loading active tab...'}
           </p>
         </div>
         <button
@@ -354,18 +257,14 @@ export const AssessmentTab: React.FC = () => {
         <button
           onClick={() => { void copyReport('markdown'); }}
           className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:border-emerald-800/50 rounded transition-colors shrink-0"
-          title={activeSubtab === 'transport'
-            ? 'Copy the current Transport & TLS report in Markdown'
-            : 'Copy the current OWASP Secure Headers report in Markdown'}
+          title="Copy the full assessment report (all categories) in Markdown"
         >
           Copy MD
         </button>
         <button
           onClick={() => { void copyReport('json'); }}
           className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-purple-400 hover:border-purple-800/50 rounded transition-colors shrink-0"
-          title={activeSubtab === 'transport'
-            ? 'Copy the current Transport & TLS report in JSON'
-            : 'Copy the current OWASP Secure Headers report in JSON'}
+          title="Copy the full assessment report (all categories) in JSON"
         >
           Copy JSON
         </button>
@@ -377,79 +276,74 @@ export const AssessmentTab: React.FC = () => {
             <button
               key={tab.id}
               type="button"
-              disabled={!tab.enabled}
-              onClick={() => tab.enabled && setActiveSubtab(tab.id)}
+              onClick={() => setActiveSubtab(tab.id)}
               className={[
-                'rounded border px-1.5 py-1 text-center transition-colors min-w-0',
-                tab.enabled
-                  ? activeSubtab === tab.id
-                    ? 'border-blue-800/60 bg-blue-950/30 text-blue-200'
-                    : 'border-gray-700 bg-gray-900/60 text-gray-300 hover:text-white hover:border-gray-600'
-                  : 'border-gray-800 bg-gray-950/40 text-gray-600 cursor-not-allowed',
+                'rounded border px-1.5 py-1 text-center text-[11px] font-medium transition-colors min-w-0 truncate',
+                activeSubtab === tab.id
+                  ? 'border-blue-800/60 bg-blue-950/30 text-blue-200'
+                  : 'border-gray-700 bg-gray-900/60 text-gray-300 hover:text-white hover:border-gray-600',
               ].join(' ')}
             >
-              <div className="flex items-center justify-center gap-1 min-w-0">
-                <span className="text-[11px] font-medium truncate">{tab.label}</span>
-                {!tab.enabled && (
-                  <span className="px-1 py-px text-[8px] uppercase tracking-widest border border-gray-800 rounded text-gray-500 shrink-0">
-                    Soon
-                  </span>
-                )}
-              </div>
+              {tab.label}
             </button>
           ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
-          {activeSubtab === 'transport' ? (
-            <>
-              <span>Captured requests: <span className="text-gray-300">{transportReport.capturedRequestCount}</span></span>
-              <span>HTTPS requests: <span className="text-gray-300">{transportReport.observedHttpsRequestCount}</span></span>
-              <span>HTTP requests: <span className="text-gray-300">{transportReport.observedHttpRequestCount}</span></span>
-              <span>HTTP links in DOM: <span className="text-gray-300">{transportObservation?.absoluteHttpLinks.length ?? 0}</span></span>
-            </>
-          ) : (
-            <>
-              <span>Captured requests: <span className="text-gray-300">{headerReport.capturedRequestCount}</span></span>
-              <span>Logout-like requests: <span className="text-gray-300">{headerReport.logoutRequestCount}</span></span>
-              <span>Observed primary headers: <span className="text-gray-300">{headerReport.observedHeaderNames.length}</span></span>
-            </>
-          )}
+          <span>{metaLine}</span>
           {copyToast && <span className="text-emerald-400">{copyToast}</span>}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
         {loading ? (
           <div className="flex items-center justify-center h-full text-gray-700 text-[11px]">
             Building assessment...
           </div>
         ) : error ? (
-          <div className="p-4 text-[11px] text-red-300">
-            {error}
-          </div>
-        ) : activeSubtab !== 'headers' && activeSubtab !== 'transport' ? (
-          <div className="p-4 space-y-2 text-[11px]">
-            <p className="text-gray-200 font-semibold">This subtab is reserved for a later rollout.</p>
-            <p className="text-gray-500">
-              The Assessment area now exposes checks incrementally. Transport & TLS and Headers are active; cookie, token, and storage checks will move here in the next steps.
-            </p>
-          </div>
-        ) : activeSubtab === 'headers' && !headerReport.primaryRequest ? (
-          <div className="p-4 space-y-2 text-[11px]">
-            <p className="text-amber-300 font-semibold">No captured response headers yet.</p>
-            <p className="text-gray-500">
+          <div className="text-[11px] text-red-300">{error}</div>
+        ) : activeSubtab === 'headers' ? (
+          !headerReport.primaryRequest ? (
+            <EmptyState tone="warn" title="No captured response headers yet">
               Reload or navigate the page so the extension can capture the document response before running the OWASP Secure Headers checks.
-            </p>
-          </div>
+            </EmptyState>
+          ) : (
+            <>
+              {HEADER_SECTION_ORDER.map(kind => (
+                <HeaderCheckSection
+                  key={kind}
+                  kind={kind}
+                  checks={groupedChecks[kind]}
+                  defaultOpen={kind === 'required'}
+                />
+              ))}
+              {headerFindings.length > 0 && (
+                <Section title="Additional header & CORS findings" meta={<span className="text-gray-500">{headerFindings.length}</span>}>
+                  <FindingList findings={headerFindings} emptyTitle="No additional header findings" />
+                </Section>
+              )}
+            </>
+          )
         ) : activeSubtab === 'transport' ? (
           <TransportTlsPanel report={transportReport} />
+        ) : activeSubtab === 'cookies' ? (
+          <FindingList
+            findings={cookieFindings}
+            emptyTitle="No cookie findings"
+            emptyHint="No risky cookie attributes or Set-Cookie patterns were observed in the captured context."
+          />
+        ) : activeSubtab === 'tokens' ? (
+          <FindingList
+            findings={tokenFindings}
+            emptyTitle="No token findings"
+            emptyHint="No JWT or opaque token risks were observed in cookies or web storage for this context."
+          />
         ) : (
-          <div className="p-2.5 space-y-3">
-            {HEADER_SECTION_ORDER.map(kind => (
-              <HeaderCheckSection key={kind} kind={kind} checks={groupedChecks[kind]} />
-            ))}
-          </div>
+          <FindingList
+            findings={storageFindings}
+            emptyTitle="No storage findings"
+            emptyHint="No sensitive tokens were observed in localStorage or sessionStorage for this context."
+          />
         )}
       </div>
     </div>
