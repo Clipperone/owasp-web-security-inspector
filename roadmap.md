@@ -2,474 +2,126 @@
 
 ## Obiettivo
 
-Trasformare l'estensione da strumento di ispezione e modifica in uno strumento di valutazione delle configurazioni applicative orientato alle best practice OWASP per:
+Far evolvere l'estensione da strumento di ispezione/editing a strumento di
+**valutazione di sicurezza browser-side** orientato alle best practice OWASP per
+cookie e session management, token/JWT, security header e transport, restando
+sempre dentro ciò che il browser può osservare (nessun backend, nessuna chiamata
+esterna).
 
-- cookie e session management
-- token e JWT storage
-- security header e browser hardening
-- esportazione dei finding in forma utile per review, QA e rilascio
+Direzioni di crescita: rendere i finding più profondi e affidabili, abilitare
+review comparative (snapshot/diff), migliorare triage e leggibilità, e aprire la
+configurabilità — il tutto mantenendo il codice puro, testato e pubblicabile come
+progetto open source.
 
-## Stato Attuale
+## Stato attuale (v0.2.0)
 
-### Completato
+Già disponibile:
 
-- base solida di ispezione cookie, token e header
-- editing cookie con validazioni pratiche su `Secure`, `SameSite`, `__Host-`, `__Secure-`
+- ispezione ed editing di cookie, token e header (regole `declarativeNetRequest`)
 - decode JWT locale con controlli strutturali e stato di scadenza
-- acquisizione response headers e summary OWASP-oriented nella tab Response Headers
-- gestione centralizzata delle regole DNR nel background
-- ESLint, lint TypeScript e build funzionanti
-- nuova tab `Assessment` con finding automatici su cookie, storage token e header
-- export del report di assessment in Markdown e JSON
-- migrazione della UI al Chrome side panel (`chrome.sidePanel`, Chrome 114+)
-- Assessment unificato: sottotab `Cookies`, `Tokens` e `Storage` ora attivi accanto a `Headers` e `Transport & TLS`, alimentati dallo stesso motore
-- design system condiviso (`src/sidepanel/ui`) e report unico Markdown/JSON su tutte le categorie (`src/utils/report.ts`)
-- modularizzazione del motore di assessment in `src/utils/assessment/`
-- scaffolding open source: `LICENSE` (MIT), `CONTRIBUTING.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, CI GitHub Actions
+- assessment OWASP Secure Headers e assessment Transport & TLS passivo
+- **Assessment unificato**: sottotab `Headers`, `Transport & TLS`, `Cookies`,
+  `Tokens`, `Storage` tutti attivi e alimentati dallo stesso motore
+- **report unico** Markdown/JSON su tutte le categorie (`src/utils/report.ts`)
+- UI servita nel **Chrome side panel** e **design system** condiviso
+  (`src/sidepanel/ui`)
+- motore di assessment **modularizzato** in `src/utils/assessment/`
+- unit test con `vitest`, CI GitHub Actions, scaffolding OSS (`LICENSE`,
+  `CONTRIBUTING.md`, `ARCHITECTURE.md`, `CHANGELOG.md`)
 
-### Da completare
+Per il dettaglio cronologico vedi `CHANGELOG.md` e la storia git.
 
-- rendere l'assessment più profondo e più affidabile sui casi reali
-- aggiungere snapshot e diff tra stati applicativi
-- migliorare copertura `Set-Cookie`, `Cache-Control`, logout e cleanup sessione
-- aggiungere test automatici ai moduli puri
-- allineare documentazione e release alla nuova direzione del prodotto
+## Principi di esecuzione
 
-## Principi di Esecuzione
-
-Per ogni fase:
+Per ogni intervento:
 
 1. implementare la modifica più piccola utile
-2. validare con `npm run eslint`, `npm run lint`, `npm run build`
-3. verificare manualmente la UI del popup su almeno un sito reale
-4. aggiornare README e roadmap se il comportamento utente cambia
+2. mantenere la logica di assessment in moduli puri, non nei componenti React
+3. validare con `npm run test`, `npm run lint`, `npm run eslint`, `npm run build`
+4. verificare manualmente nel side panel su almeno un sito reale
+5. aggiornare `README.md`, `ARCHITECTURE.md` e `CHANGELOG.md` se il comportamento
+   utente o la struttura cambiano
 
-## Fase 0 - Consolidamento Base Assessment
+## Direzioni future (prioritizzate)
 
-### Stato
+### M1 — Triage e leggibilità dei finding (quick win)
 
-- completata la parte tecnica di consolidamento
-- resta consigliata la verifica manuale su siti reali prima del rilascio
+- barra di **postura sintetica** in cima all'Assessment: rollup severità sempre
+  visibile (`High N · Medium N · Low N`), senza trasformare la vista in dashboard
+- ripristino dei **filtri** per severità, categoria e "solo azionabili", più
+  ricerca testuale sui finding (capacità descritta nella vecchia Fase 7 ma persa
+  nel passaggio al modello a sottotab)
+- conteggi e ordinamento coerenti tra UI e report
 
-### Obiettivo
+### M2 — Analisi CSP approfondita
 
-Stabilizzare la nuova tab `Assessment` appena introdotta e verificarne il comportamento reale.
+Il check CSP attuale è superficiale (presenza di `unsafe`). Introdurre un
+analizzatore per direttiva:
 
-### Step
+- `unsafe-inline` / `unsafe-eval`, sorgenti wildcard, schemi pericolosi
+- assenza di `object-src`, `base-uri`, `frame-ancestors`
+- uso di nonce/hash, `require-trusted-types-for` (Trusted Types), `report-to`
+- finding dedicati con remediation precisa
 
-1. verificare manualmente la tab `Assessment` su:
-   - un sito con login tradizionale a cookie
-   - un sito con JWT in web storage
-   - un sito con header di sicurezza maturi
-2. controllare che il refresh ricarichi correttamente:
-   - active tab info
-   - cookies
-   - storage scan
-   - cached response headers
-3. verificare che export Markdown e JSON siano coerenti con i finding mostrati
-4. correggere eventuali falsi positivi o finding duplicati
+Riferimento: OWASP Content Security Policy Cheat Sheet.
 
-### Output atteso
+### M3 — Snapshot & Diff
 
-- assessment stabile
-- formato report consistente
-- zero errori di lint/build
+Il vero salto di qualità per un reviewer.
 
-### Risultato
+1. snapshot manuali del contesto corrente: cookies, storage, primary response
+   summary, finding di assessment
+2. supporto agli snapshot tipici: pre-login, post-login, post-logout
+3. vista **diff**: cookie nuovi/rimossi, token comparsi/spariti, header cambiati,
+   finding nuovi/risolti
+4. export del diff in Markdown
 
-- euristiche sensibili ristrette per ridurre falsi positivi su cookie e storage key
-- export Markdown e JSON allineato ai finding visibili nel filtro corrente
-- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
+### M4 — Reportistica avanzata e verifica JWT
 
-## Fase 1 - Cookie Assessment Avanzato
+- export filtrato (es. solo High/Medium) e export del diff
+- schema JSON stabile per riuso in CI / issue template; valutare output **SARIF**
+- **verifica firma JWT** con chiave o JWKS forniti dall'utente, eseguita
+  localmente via **Web Crypto** — mantiene il principio browser-side e distingue
+  in modo netto "decode" da "trust verification"
 
-### Stato
+### M5 — Controlli aggiuntivi osservabili dal browser
 
-- completata la parte tecnica della fase 1
-- resta consigliata la verifica manuale su siti reali con login e scope multipli
+- **Subresource Integrity (SRI)**: `<script>`/`<link>` cross-origin senza
+  `integrity`
+- **inventario terze parti**: origini esterne contattate e cookie di terze parti
+- **mixed content**, form insicuri e connessioni `ws://` resi finding espliciti
+  (parte del segnale è già raccolto dal modulo Transport)
 
-### Obiettivo
+### M6 — Configurabilità e maturità prodotto
 
-Rendere la valutazione cookie utile in ottica session management review e non solo editing.
+- pagina **Options**: soglie configurabili (lifetime cookie/JWT, cosa è
+  "sensibile"), toggle dei check, **soppressione/acknowledge** dei finding per
+  origine (oggi `ExtensionSettings` espone solo `autoDecodeTokens`)
+- internazionalizzazione (`chrome.i18n`)
+- tema chiaro (facilitato dalla centralizzazione in `src/sidepanel/ui/status.ts`)
+- storico per-tab degli assessment
 
-### Step
+### Release
 
-1. classificare automaticamente i cookie in categorie:
-   - session/auth
-   - csrf
-   - preference
-   - analytics/other
-2. aggiungere finding per cookie sensibili con:
-   - `SameSite=None` senza giustificazione chiara
-   - `Path` troppo ampia
-   - `Domain` troppo ampia
-   - lifetime eccessiva
-3. evidenziare cookie duplicati con stesso nome su scope diversi
-4. aggiungere finding specifici per:
-   - assenza di `__Host-` quando applicabile
-   - assenza di `__Secure-` per cookie cross-site o auth rilevanti
-5. mostrare una sezione riepilogativa dedicata ai cookie più critici
+Chiudere le milestone in incrementi verificabili: validazione completa, test
+manuale su siti campione, `npm run release:patch|minor`, changelog aggiornato.
 
-### Output atteso
+## Fuori scope (browser-side only)
 
-- assessment cookie con priorità e contesto
-- minore rumore sui cookie non sensibili
+Da non reintrodurre, perché richiede accesso al layer TLS o chiamate di rete e
+romperebbe il principio del progetto:
 
-### Risultato
+- verifica certificati, cipher suite e versioni di protocollo TLS
+- membership nella preload list HSTS, `security.txt`, OCSP/CT
+- revoca token o invalidazione sessione lato server
+- forza del secret JWT e qualità del key management
+- compliance formale completa (es. OWASP ASVS)
 
-- classificazione automatica dei cookie in `session/auth`, `csrf`, `preference`, `analytics/other`
-- nuovi finding per `SameSite=None`, scope `Path` ampia, scope `Domain` ampia e prefix recommendation `__Host-`/`__Secure-`
-- riepilogo dedicato ai cookie osservati e ai cookie più critici nella tab `Assessment`
-- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
+## Ordine consigliato
 
-## Fase 2 - Parsing e Analisi Reale di Set-Cookie
-
-### Stato
-
-- completata la parte tecnica della fase 2
-- resta consigliata la verifica manuale su login flow, callback OAuth e API di refresh sessione
-
-### Obiettivo
-
-Valutare ciò che il server consegna al browser, non solo ciò che resta persistito.
-
-### Step
-
-1. migliorare il parsing di `Set-Cookie` per supportare meglio:
-   - più attributi
-   - casi edge su valori con `=`
-   - più cookie nella stessa sessione di navigazione
-2. associare i `Set-Cookie` ai request type rilevanti:
-   - document response
-   - login/auth callback
-   - API response che impostano sessione
-3. aggiungere finding per:
-   - `Secure` mancante
-   - `HttpOnly` mancante
-   - `SameSite` mancante
-   - `SameSite=None` senza `Secure`
-4. mostrare separatamente:
-   - cookie osservati nella response
-   - cookie presenti nel browser jar
-
-### Output atteso
-
-- visione server-side observable più affidabile
-- riduzione del mismatch tra response e cookie store
-
-### Risultato
-
-- analisi `Set-Cookie` applicata alle response rilevanti dello stesso host: document, callback/auth flow e API session-related
-- finding aggiuntivi per `Set-Cookie` sensibili senza `Secure`, senza `HttpOnly`, senza `SameSite` e per `SameSite=None` senza `Secure`
-- riepilogo separato nella tab `Assessment` tra cookie osservati nelle response e cookie presenti nel browser jar
-- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
-
-## Fase 3 - Header Assessment Esteso
-
-### Stato
-
-- completata la parte tecnica della fase 3
-- resta consigliata la verifica manuale su document response, logout flow e response CORS credenziali
-
-### Obiettivo
-
-Estendere la copertura dei response headers davvero utili per una review OWASP/browser hardening.
-
-### Step
-
-1. aggiungere valutazione esplicita di:
-   - `Cache-Control`
-   - `Clear-Site-Data`
-   - `Access-Control-Allow-Credentials`
-   - `Vary: Origin` nei casi CORS sensibili
-   - `Server`
-   - `X-Powered-By`
-2. distinguere meglio:
-   - header mancanti
-   - header presenti ma deboli
-   - header presenti ma non applicabili al tipo di response
-3. affinare i warning per CSP:
-   - `unsafe-inline`
-   - `unsafe-eval`
-   - policy vuote o troppo permissive
-4. aggiungere spiegazioni più precise su HSTS:
-   - `max-age`
-   - `includeSubDomains`
-   - `preload`
-5. inserire nella UI un blocco “why it matters” sintetico per i finding header più importanti
-
-### Output atteso
-
-- assessment header più credibile e meno superficiale
-- migliore utilità per revisione di login page e app autenticata
-
-### Risultato
-
-- valutazione estesa di `Cache-Control`, `Clear-Site-Data`, `Access-Control-Allow-Credentials`, `Vary: Origin`, `Server` e `X-Powered-By`
-- distinzione più esplicita tra header mancanti, header deboli e casi non applicabili nel traffico catturato
-- warning HSTS più precisi su `max-age`, `includeSubDomains` e `preload`
-- nuovo blocco `Why it matters` per i finding header nella tab `Assessment` e nel report Markdown
-- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
-
-## Fase 4 - Token e JWT Risk Assessment
-
-### Stato
-
-- completata la parte tecnica della fase 4
-- resta consigliata la verifica manuale su token in cookie, `localStorage`, `sessionStorage` e input manuale nella tab Tokens
-
-### Obiettivo
-
-Passare dal semplice decode JWT alla valutazione del rischio lato browser.
-
-### Step
-
-1. classificare i token per origine:
-   - cookie
-   - `localStorage`
-   - `sessionStorage`
-   - input manuale
-2. aggiungere finding per JWT con:
-   - `alg=none`
-   - `exp` assente
-   - lifetime troppo lunga
-   - claim sensibili o eccessivi
-   - token scaduto ancora presente
-3. aggiungere finding non-JWT per chiavi storage sensibili:
-   - `access_token`
-   - `refresh_token`
-   - `id_token`
-   - bearer-like stringhe lunghe e persistenti
-4. evidenziare rischi storage-specifici:
-   - `localStorage` ad alto rischio XSS/persistenza
-   - `sessionStorage` a rischio medio
-5. opzionale successivo:
-   - supporto a verifica firma JWT tramite JWKS/public key fornita dall'utente
-
-### Output atteso
-
-- lettura più utile dei token reali
-- chiara distinzione tra decode e trust verification
-
-### Risultato
-
-- classificazione dei token osservati per origine: `cookie`, `localStorage`, `sessionStorage`, con preview separata per `manual input`
-- finding aggiuntivi per JWT con `alg=none`, `exp` assente, lifetime lunga, claim sensibili o payload eccessivo, token scaduto ancora presente nel contesto di review
-- finding per token opachi non-JWT in storage browser e osservazione informativa per token-like cookie values
-- nuova sezione `Token summary` nella tab `Assessment` e nuovo blocco `Risk preview` nella tab `Tokens` per l'input manuale
-- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
-
-## Fase 5 - Snapshot e Diff
-
-### Obiettivo
-
-Consentire review comparative tra stati applicativi, che è il vero salto di qualità per un reviewer.
-
-### Step
-
-1. introdurre snapshot manuali del contesto corrente:
-   - cookies
-   - storage entries
-   - primary response summary
-   - finding di assessment
-2. supportare almeno tre snapshot tipici:
-   - pre-login
-   - post-login
-   - post-logout
-3. creare una vista diff per mostrare:
-   - nuovi cookie
-   - cookie rimossi
-   - token comparsi o spariti
-   - header cambiati
-   - finding nuovi o risolti
-4. aggiungere export diff in Markdown
-
-### Output atteso
-
-- strumento realmente utile per review manuale e audit rapido
-
-## Fase 6 - Reportistica e Workflow di Review
-
-### Obiettivo
-
-Rendere il plugin utile anche fuori dalla singola sessione del popup.
-
-### Step
-
-1. strutturare il report export con sezioni fisse:
-   - contesto
-   - severità summary
-   - finding dettagliati
-   - remediation
-   - limiti dell'analisi browser-side
-2. aggiungere copy/export per:
-   - full report
-   - only high/medium findings
-   - diff report
-3. standardizzare il formato JSON per usi futuri:
-   - issue template
-   - import in CI helper
-   - comparazioni tra sessioni
-4. aggiungere timestamp, hostname, URL, conteggi osservati
-
-### Output atteso
-
-- report riusabile in review tecniche e note di rilascio
-
-## Fase 7 - Libreria Remediation e UX di Prodotto
-
-### Stato
-
-- completata la parte tecnica della fase 7
-- resta consigliata la verifica manuale della leggibilità su popup reale con molti finding e filtri combinati
-
-### Obiettivo
-
-Migliorare il valore percepito del tool rendendo i finding più utili e più leggibili.
-
-### Step
-
-1. standardizzare i finding con template coerenti:
-   - problema
-   - impatto
-   - evidenza
-   - remediation
-2. aggiungere badge o gruppi per:
-   - auth/session
-   - csrf
-   - browser hardening
-   - disclosure
-3. introdurre filtri UI per:
-   - categoria
-   - severità
-   - solo finding azionabili
-4. migliorare naming e copy del prodotto per il rilascio:
-   - meno “editor”, più “assessment”
-   - evitare promesse di compliance totale
-
-### Output atteso
-
-- UX più professionale
-- migliore aderenza al posizionamento del prodotto
-
-### Risultato
-
-- finding resi più coerenti nella UI e nel report con template `Problem`, `Impact`, `Evidence`, `Remediation`
-- badge e gruppi introdotti per `Auth/Session`, `CSRF`, `Browser Hardening`, `Disclosure`, `Token Handling`
-- filtri aggiunti per categoria, gruppo e `Actionable only`, mantenendo il filtro per severità già esistente
-- copy della tab `Assessment` reso più esplicitamente orientato a security assessment browser-side e non a compliance totale
-- validazione eseguita con `npm run eslint`, `npm run lint`, `npm run build`
-
-## Fase 8 - Refactor e Test
-
-### Stato
-
-- completata la parte tecnica della fase 8
-- le fixture introdotte sono sintetiche ma coprono i casi principali del motore di assessment senza dipendere dalla UI
-
-### Obiettivo
-
-Rendere il motore di assessment affidabile, testabile e facile da estendere.
-
-### Step
-
-1. mantenere la logica di assessment in moduli puri e non nei componenti React
-2. aggiungere unit test per:
-   - classificazione cookie sensibili
-   - parsing `Set-Cookie`
-   - valutazione header principali
-   - ranking/severità finding
-   - rilevamento JWT e claim sensibili
-3. aggiungere fixture realistiche per:
-   - sito con session cookie tradizionale
-   - SPA con token in storage
-   - sito con header maturi
-   - sito con misconfigurazioni evidenti
-4. validare regressioni su build di release
-
-### Output atteso
-
-- assessment più stabile
-- minore rischio di regressioni e falsi positivi
-
-### Risultato
-
-- aggiunto `vitest` con script `npm run test` per eseguire unit test sui moduli puri
-- coperti con test `src/utils/jwtUtils.ts` e `src/utils/assessment.ts`
-- verificati classificazione cookie sensibili/CSRF, parsing `Set-Cookie`, finding su header e token, ordinamento per severità e rilevamento di claim JWT sensibili
-- validazione eseguita con `npm run test`, `npm run eslint`, `npm run lint`, `npm run build`
-
-## Fase 9 - Documentazione e Posizionamento Release
-
-### Obiettivo
-
-Allineare documentazione, README e release message alla reale capacità del plugin.
-
-### Step
-
-1. aggiornare README con:
-   - nuova tab `Assessment`
-   - spiegazione dei limiti browser-side
-   - casi d'uso reali
-2. preparare descrizione release orientata a:
-   - OWASP-inspired browser assessment
-   - session/token/header review
-3. definire chiaramente cosa non viene verificato:
-   - revoca token lato server
-   - session rotation lato backend
-   - forza del secret JWT
-   - compliance formale completa
-4. aggiungere screenshot o GIF del flusso assessment
-
-### Output atteso
-
-- documentazione coerente con il prodotto reale
-- minore rischio di overclaim nel rilascio pubblico
-
-## Fase 10 - Release Incrementale
-
-### Obiettivo
-
-Rilasciare in modo ordinato e verificabile.
-
-### Step
-
-1. chiudere le fasi 0-3 come primo rilascio utile
-2. eseguire validazione completa:
-   - `npm run eslint`
-   - `npm run lint`
-   - `npm run build`
-3. test manuale su siti campione
-4. aggiornare versione con:
-   - `npm run release:patch`
-   - oppure `npm run release:minor` se la milestone è ampia
-5. produrre changelog della release
-
-### Output atteso
-
-- prima release chiaramente centrata su assessment browser-side
-
-## Ordine Consigliato di Esecuzione
-
-Se vuoi procedere in modo pragmatico, l'ordine migliore è questo:
-
-1. Fase 0 - consolidamento assessment esistente
-2. Fase 1 - cookie assessment avanzato
-3. Fase 2 - parsing e analisi `Set-Cookie`
-4. Fase 3 - header assessment esteso
-5. Fase 4 - token risk assessment avanzato
-6. Fase 5 - snapshot e diff
-7. Fase 6 - reportistica strutturata
-8. Fase 8 - test
-9. Fase 9 - documentazione release
-10. Fase 10 - rilascio
-
-## Prossimo Step Consigliato
-
-Il prossimo step con il miglior rapporto valore/sforzo è:
-
-1. consolidare la nuova tab `Assessment`
-2. migliorare subito l'analisi cookie e `Set-Cookie`
-3. poi estendere l'assessment header su cache, CORS e disclosure
-
-Questo ordine porta velocemente il plugin verso un rilascio credibile come strumento di valutazione OWASP-oriented.
+1. M1 — postura sintetica e filtri (massimo rapporto valore/sforzo)
+2. M2 — analizzatore CSP
+3. M3 — snapshot & diff
+4. M4 — reportistica avanzata e verifica firma JWT
+5. M5 — controlli aggiuntivi (SRI, terze parti, mixed content)
+6. M6 — Options, soppressione finding, i18n, tema chiaro
