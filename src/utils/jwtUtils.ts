@@ -156,6 +156,26 @@ export function formatExpiry(token: TokenData): string {
   return                                          fmt(Math.round(absHours / 24),   'day');
 }
 
+/**
+ * Returns non-null when the token's `nbf` (not-before) claim is in the future —
+ * i.e. the token is not yet valid. Returns null when `nbf` is absent or has
+ * already been reached (within a 1-second clock-skew tolerance).
+ *
+ * @example
+ * checkNotBefore(token) // → { reason: 'Not valid until …', at: Date } or null
+ */
+export function checkNotBefore(token: TokenData): { reason: string; at: Date } | null {
+  const nbf = token.payload.nbf;
+  if (typeof nbf !== 'number') return null;
+
+  const skewSeconds = 1;
+  const at = new Date(nbf * 1_000);
+  if (nbf - Math.floor(Date.now() / 1_000) > skewSeconds) {
+    return { reason: `Not valid until ${at.toLocaleString()}`, at };
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────

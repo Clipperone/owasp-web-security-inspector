@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import type { CachedRequest } from '../types';
-import { buildAssessmentFindings, getOwaspHeaderAssessment } from './assessment';
+import type { AssessmentFinding, CachedRequest } from '../types';
+import { buildAssessmentFindings, getOwaspHeaderAssessment, isActionableFinding } from './assessment';
 import { buildTransportTlsSection } from './transportTls';
 import {
   REPORT_SCHEMA_VERSION,
@@ -117,5 +117,34 @@ describe('unified assessment report', () => {
     expect(total).toBe(filtered.findings.length);
     expect(filtered.severityCounts.medium).toBe(0);
     expect(filtered.schemaVersion).toBe('1.0');
+  });
+});
+
+describe('finding filters (triage)', () => {
+  const sample: AssessmentFinding[] = [
+    { id: 'a', category: 'cookies', severity: 'high', title: 'Sensitive cookie without Secure', summary: 'travels over http', evidence: 'session on x', remediation: 'add Secure' },
+    { id: 'b', category: 'headers', severity: 'info', title: 'Clear-Site-Data not applicable', summary: 'no logout observed', evidence: 'none', remediation: 'capture a logout' },
+    { id: 'c', category: 'tokens', severity: 'low', title: 'JWT payload exposes claims', summary: 'contains email', evidence: 'email claim', remediation: 'minimize claims' },
+  ];
+
+  test('isActionableFinding excludes info', () => {
+    expect(isActionableFinding(sample[0])).toBe(true);
+    expect(isActionableFinding(sample[1])).toBe(false);
+    expect(isActionableFinding(sample[2])).toBe(true);
+  });
+
+  test('onlyActionable drops info findings', () => {
+    const result = filterFindings(sample, { onlyActionable: true });
+    expect(result.map(f => f.id)).toEqual(['a', 'c']);
+  });
+
+  test('search matches across text fields, case-insensitively', () => {
+    expect(filterFindings(sample, { search: 'EMAIL' }).map(f => f.id)).toEqual(['c']);
+    expect(filterFindings(sample, { search: 'secure' }).map(f => f.id)).toEqual(['a']);
+    expect(filterFindings(sample, { search: 'zzz-nothing' })).toHaveLength(0);
+  });
+
+  test('minSeverity low keeps low and above but drops info', () => {
+    expect(filterFindings(sample, { minSeverity: 'low' }).map(f => f.id)).toEqual(['a', 'c']);
   });
 });

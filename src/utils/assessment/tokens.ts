@@ -4,7 +4,7 @@ import type {
   TokenAssessmentOrigin,
   TokenAssessmentSummary,
 } from '../../types';
-import { decodeJwt, isJwt } from '../jwtUtils';
+import { checkNotBefore, decodeJwt, isJwt } from '../jwtUtils';
 import { finding } from './shared';
 import {
   SENSITIVE_CLAIM_RE,
@@ -79,6 +79,16 @@ export function assessStorageTokens(entries: StorageEntry[]): AssessmentFinding[
         `${entry.key} was found in localStorage on ${entry.area}.`,
         'Prefer HttpOnly cookies for session identifiers or, when browser-side token storage is required, prefer shorter-lived sessionStorage with strong XSS defenses.',
       ));
+    } else if (entry.area === 'indexedDB') {
+      findings.push(finding(
+        `storage-idb-${entry.key}`,
+        'storage',
+        'high',
+        'Sensitive token stored in IndexedDB',
+        'Tokens in IndexedDB survive browser restarts and remain reachable from JavaScript in the page context.',
+        `${entry.key} was found in IndexedDB.`,
+        'Prefer HttpOnly cookies for session identifiers or, when browser-side token storage is required, prefer shorter-lived sessionStorage with strong XSS defenses.',
+      ));
     } else {
       findings.push(finding(
         `storage-session-${entry.area}-${entry.key}`,
@@ -145,6 +155,19 @@ export function assessStorageTokens(entries: StorageEntry[]): AssessmentFinding[
       }
     }
 
+    const notBefore = checkNotBefore(token);
+    if (notBefore) {
+      findings.push(finding(
+        `token-nbf-future-${entry.area}-${entry.key}`,
+        'tokens',
+        'info',
+        'JWT is not yet valid (nbf in the future)',
+        'The token declares a not-before (nbf) time that has not been reached, so it should not be accepted yet.',
+        `${entry.key} in ${entry.area} is not valid until ${notBefore.at.toLocaleString()}.`,
+        'If this is a deliberately pre-issued token, wait until the nbf time. Otherwise review token issuance and server clock synchronization.',
+      ));
+    }
+
     const sensitiveClaims = Object.keys(token.payload).filter(key => SENSITIVE_CLAIM_RE.test(key));
     if (sensitiveClaims.length > 0) {
       findings.push(finding(
@@ -187,6 +210,16 @@ function assessTokenCandidate(candidate: TokenCandidate): AssessmentFinding[] {
         `${candidate.label} contains a long opaque token-like value in sessionStorage.`,
         'Keep browser-stored opaque tokens short-lived and rely on strong XSS defenses if client-side storage cannot be avoided.',
       ));
+    } else if (candidate.origin === 'indexedDB') {
+      findings.push(finding(
+        `opaque-token-idb-${candidate.label}`,
+        'storage',
+        'high',
+        'Opaque token-like value stored in IndexedDB',
+        'A non-JWT token-like value was found in IndexedDB, where it stays reachable from page JavaScript and survives browser restarts.',
+        `${candidate.label} contains a long opaque token-like value in IndexedDB.`,
+        'Prefer HttpOnly cookies for browser session state, or reduce token lifetime and harden the application against XSS if browser-side storage is required.',
+      ));
     } else if (candidate.origin === 'cookie') {
       findings.push(finding(
         `opaque-token-cookie-${candidate.label}`,
@@ -226,6 +259,16 @@ function assessTokenCandidate(candidate: TokenCandidate): AssessmentFinding[] {
       'sessionStorage reduces persistence but the JWT is still exposed to page JavaScript in the browser context.',
       `${candidate.label} stores a JWT in sessionStorage.`,
       'Keep session-stored JWTs short-lived and combine them with strong CSP and XSS defenses.',
+    ));
+  } else if (candidate.origin === 'indexedDB') {
+    findings.push(finding(
+      `jwt-idb-${candidate.label}`,
+      'storage',
+      'high',
+      'JWT stored in IndexedDB',
+      'A JWT found in IndexedDB is accessible to page scripts and survives browser restarts, which increases replay impact if the application is exposed to XSS.',
+      `${candidate.label} stores a JWT in IndexedDB.`,
+      'Prefer HttpOnly cookies for browser session tokens, or combine short JWT lifetime with strong XSS defenses when client-side storage is unavoidable.',
     ));
   } else if (candidate.origin === 'cookie') {
     findings.push(finding(
@@ -298,6 +341,19 @@ function assessTokenCandidate(candidate: TokenCandidate): AssessmentFinding[] {
     }
   }
 
+  const notBefore = checkNotBefore(token);
+  if (notBefore) {
+    findings.push(finding(
+      `token-nbf-future-${candidate.label}`,
+      'tokens',
+      'info',
+      'JWT is not yet valid (nbf in the future)',
+      'The token declares a not-before (nbf) time that has not been reached, so it should not be accepted yet.',
+      `${candidate.label} from ${originLabel} is not valid until ${notBefore.at.toLocaleString()}.`,
+      'If this is a deliberately pre-issued token, wait until the nbf time. Otherwise review token issuance and server clock synchronization.',
+    ));
+  }
+
   const payloadKeys = Object.keys(token.payload);
   const sensitiveClaims = payloadKeys.filter(key => SENSITIVE_CLAIM_RE.test(key));
   if (sensitiveClaims.length > 0) {
@@ -345,6 +401,7 @@ export function getTokenAssessmentSummary(
     cookie: 0,
     localStorage: 0,
     sessionStorage: 0,
+    indexedDB: 0,
     manual: 0,
   };
   let jwtCount = 0;

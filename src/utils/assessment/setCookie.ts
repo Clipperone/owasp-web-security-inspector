@@ -7,6 +7,7 @@ export interface ParsedSetCookie {
   value: string;
   secure: boolean;
   httpOnly: boolean;
+  partitioned: boolean;
   sameSite?: string;
   domain?: string;
   path?: string;
@@ -29,6 +30,7 @@ export function parseSetCookie(headerValue: string): ParsedSetCookie | null {
     value: nameValue.slice(separatorIndex + 1).trim(),
     secure: false,
     httpOnly: false,
+    partitioned: false,
   };
 
   for (const rawAttribute of attributeParts) {
@@ -39,6 +41,7 @@ export function parseSetCookie(headerValue: string): ParsedSetCookie | null {
 
     if (key === 'secure') parsed.secure = true;
     else if (key === 'httponly') parsed.httpOnly = true;
+    else if (key === 'partitioned') parsed.partitioned = true;
     else if (key === 'samesite') parsed.sameSite = value.toLowerCase();
     else if (key === 'domain') parsed.domain = value;
     else if (key === 'path') parsed.path = value;

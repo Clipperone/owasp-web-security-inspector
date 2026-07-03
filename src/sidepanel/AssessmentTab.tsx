@@ -11,10 +11,11 @@ import type {
   StorageScanResult,
   TransportDomObservation,
 } from '../types';
-import { buildAssessmentFindings, getOwaspHeaderAssessment } from '../utils/assessment';
+import { buildAssessmentFindings, getFindingCounts, getOwaspHeaderAssessment } from '../utils/assessment';
 import { buildTransportTlsSection } from '../utils/transportTls';
-import { buildFullAssessmentReport, filterReport, renderReportJson, renderReportMarkdown } from '../utils/report';
-import type { MinSeverity } from '../utils/report';
+import { buildFullAssessmentReport, filterFindings, filterReport, renderReportJson, renderReportMarkdown } from '../utils/report';
+import type { MinSeverity, ReportFilter } from '../utils/report';
+import { buildReportFilename, downloadTextFile } from '../utils/exporter';
 import { TransportTlsPanel } from './TransportTlsPanel';
 import { FindingList } from './FindingCard';
 import {
@@ -53,11 +54,12 @@ const STATUS_SORT_WEIGHT: Record<HeaderAssessmentStatus, number> = {
 
 const HEADER_SECTION_ORDER: HeaderAssessmentKind[] = ['required', 'advisory', 'deprecated'];
 
-const SCOPE_LABELS: Record<MinSeverity, string> = {
-  all: 'All severities',
-  medium: 'High + Medium',
-  high: 'High only',
-};
+const SEVERITY_FILTER_OPTIONS: Array<{ value: MinSeverity; label: string }> = [
+  { value: 'all', label: 'All severities' },
+  { value: 'high', label: 'High only' },
+  { value: 'medium', label: 'High + Medium' },
+  { value: 'low', label: 'High + Med + Low' },
+];
 
 function groupChecks(report: HeaderAssessmentReport): Record<HeaderAssessmentKind, HeaderAssessmentCheck[]> {
   return report.checks.reduce<Record<HeaderAssessmentKind, HeaderAssessmentCheck[]>>((acc, check) => {
@@ -147,7 +149,9 @@ export const AssessmentTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<'markdown' | 'json'>('markdown');
-  const [exportScope, setExportScope] = useState<MinSeverity>('all');
+  const [minSeverity, setMinSeverity] = useState<MinSeverity>('all');
+  const [onlyActionable, setOnlyActionable] = useState(false);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -194,6 +198,31 @@ export const AssessmentTab: React.FC = () => {
     void load();
   }, [load]);
 
+  // Auto-refresh when the active tab navigates (full load or SPA route change) or
+  // when the user switches tabs. Uses chrome.tabs events only — no extra permission
+  // (changeInfo.url is available via the existing <all_urls> host access).
+  useEffect(() => {
+    const currentTabId = tabInfo?.tabId;
+    let timer: number | undefined;
+    const scheduleReload = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { void load(); }, 500);
+    };
+    const onUpdated = (updatedTabId: number, changeInfo: chrome.tabs.OnUpdatedInfo) => {
+      if (updatedTabId === currentTabId && (changeInfo.status === 'complete' || changeInfo.url !== undefined)) {
+        scheduleReload();
+      }
+    };
+    const onActivated = () => { scheduleReload(); };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onActivated.addListener(onActivated);
+    return () => {
+      window.clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onActivated.removeListener(onActivated);
+    };
+  }, [tabInfo?.tabId, load]);
+
   const activeUrl = tabInfo?.url ?? '';
   const storageEntries = useMemo(() => storageScan?.entries ?? [], [storageScan]);
 
@@ -222,13 +251,23 @@ export const AssessmentTab: React.FC = () => {
     [activeUrl, cookies, storageEntries, requests, pageResources, transportObservation, webSockets],
   );
 
-  const cookieFindings = useMemo(() => findings.filter(f => f.category === 'cookies'), [findings]);
-  const tokenFindings = useMemo(() => findings.filter(f => f.category === 'tokens'), [findings]);
-  const storageFindings = useMemo(() => findings.filter(f => f.category === 'storage'), [findings]);
-  const headerFindings = useMemo(() => findings.filter(f => f.category === 'headers'), [findings]);
-  const transportFindings = useMemo(() => findings.filter(f => f.category === 'transport'), [findings]);
+  const activeFilter = useMemo<ReportFilter>(
+    () => ({ minSeverity, onlyActionable, search }),
+    [minSeverity, onlyActionable, search],
+  );
+  const filteredFindings = useMemo(() => filterFindings(findings, activeFilter), [findings, activeFilter]);
+  const postureCounts = useMemo(() => getFindingCounts(filteredFindings), [filteredFindings]);
+  const isFiltering = minSeverity !== 'all' || onlyActionable || search.trim() !== '';
 
-  const copyReport = useCallback(async () => {
+  const cookieFindings = useMemo(() => filteredFindings.filter(f => f.category === 'cookies'), [filteredFindings]);
+  const tokenFindings = useMemo(() => filteredFindings.filter(f => f.category === 'tokens'), [filteredFindings]);
+  const storageFindings = useMemo(() => filteredFindings.filter(f => f.category === 'storage'), [filteredFindings]);
+  const headerFindings = useMemo(() => filteredFindings.filter(f => f.category === 'headers'), [filteredFindings]);
+  const transportFindings = useMemo(() => filteredFindings.filter(f => f.category === 'transport'), [filteredFindings]);
+
+  // The exported report honours the same filters shown in the UI, so "what you
+  // see is what you export"; severityCounts are recomputed on the filtered set.
+  const buildReport = useCallback(() => {
     const base = buildFullAssessmentReport({
       generatedAt: new Date().toISOString(),
       activeUrl,
@@ -236,18 +275,37 @@ export const AssessmentTab: React.FC = () => {
       transport: transportReport,
       findings,
     });
-    const report = filterReport(base, { minSeverity: exportScope });
-    const payload = exportFormat === 'markdown' ? renderReportMarkdown(report) : renderReportJson(report);
+    return filterReport(base, activeFilter);
+  }, [activeUrl, headerReport, transportReport, findings, activeFilter]);
 
+  const flashToast = useCallback((message: string) => {
+    setCopyToast(message);
+    window.setTimeout(() => setCopyToast(null), 2200);
+  }, []);
+
+  const copyReport = useCallback(async () => {
+    const report = buildReport();
+    const payload = exportFormat === 'markdown' ? renderReportMarkdown(report) : renderReportJson(report);
     try {
       await navigator.clipboard.writeText(payload);
-      setCopyToast(`Copied ${exportFormat === 'markdown' ? 'Markdown' : 'JSON'} · ${SCOPE_LABELS[exportScope]}.`);
-      window.setTimeout(() => setCopyToast(null), 2200);
+      flashToast(`Copied ${exportFormat === 'markdown' ? 'Markdown' : 'JSON'} report.`);
     } catch {
-      setCopyToast('Clipboard copy failed.');
-      window.setTimeout(() => setCopyToast(null), 2200);
+      flashToast('Clipboard copy failed.');
     }
-  }, [activeUrl, headerReport, transportReport, findings, exportFormat, exportScope]);
+  }, [buildReport, exportFormat, flashToast]);
+
+  const downloadReport = useCallback(() => {
+    const report = buildReport();
+    const iso = new Date().toISOString();
+    let host = 'unknown-host';
+    try { host = new URL(activeUrl).hostname || host; } catch { /* keep fallback */ }
+    if (exportFormat === 'markdown') {
+      downloadTextFile(buildReportFilename(host, iso, 'md'), 'text/markdown', renderReportMarkdown(report));
+    } else {
+      downloadTextFile(buildReportFilename(host, iso, 'json'), 'application/json', renderReportJson(report));
+    }
+    flashToast(`Downloaded ${exportFormat === 'markdown' ? 'Markdown' : 'JSON'} report.`);
+  }, [buildReport, exportFormat, activeUrl, flashToast]);
 
   const metaLine = (() => {
     switch (activeSubtab) {
@@ -257,8 +315,12 @@ export const AssessmentTab: React.FC = () => {
         return `Cookies in jar: ${cookies.length} · Cookie findings: ${cookieFindings.length}`;
       case 'tokens':
         return `Token findings: ${tokenFindings.length}`;
-      case 'storage':
-        return `Storage entries scanned: ${storageEntries.length} · Storage findings: ${storageFindings.length}`;
+      case 'storage': {
+        const local = storageEntries.filter(e => e.area === 'localStorage').length;
+        const session = storageEntries.filter(e => e.area === 'sessionStorage').length;
+        const idb = storageEntries.filter(e => e.area === 'indexedDB').length;
+        return `Local: ${local} · Session: ${session} · IDB: ${idb} · Storage findings: ${storageFindings.length}`;
+      }
       case 'headers':
       default:
         return `Captured requests: ${headerReport.capturedRequestCount} · Logout-like: ${headerReport.logoutRequestCount} · Observed headers: ${headerReport.observedHeaderNames.length}`;
@@ -291,26 +353,33 @@ export const AssessmentTab: React.FC = () => {
           <option value="markdown">MD</option>
           <option value="json">JSON</option>
         </select>
-        <select
-          value={exportScope}
-          onChange={e => setExportScope(e.target.value as MinSeverity)}
-          title="Severity scope for the exported findings"
-          className="px-1 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 rounded transition-colors shrink-0 focus:outline-none focus:border-blue-800/50"
-        >
-          <option value="all">All</option>
-          <option value="medium">High+Med</option>
-          <option value="high">High</option>
-        </select>
         <button
           onClick={() => { void copyReport(); }}
           className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:border-emerald-800/50 rounded transition-colors shrink-0"
-          title="Copy the assessment report to the clipboard"
+          title="Copy the assessment report to the clipboard (honours the active filters)"
         >
           Copy
+        </button>
+        <button
+          onClick={downloadReport}
+          className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-amber-400 hover:border-amber-800/50 rounded transition-colors shrink-0"
+          title="Download the assessment report to a file (honours the active filters)"
+        >
+          Download
         </button>
       </div>
 
       <div className="px-2.5 py-2 border-b border-gray-800 bg-gray-900/20 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 text-[10px]">
+          <span className="text-gray-600 uppercase tracking-widest select-none">
+            {isFiltering ? 'Posture (filtered)' : 'Posture'}
+          </span>
+          <span className={toneTextClasses('bad')}>High {postureCounts.high}</span>
+          <span className={toneTextClasses('warn')}>Medium {postureCounts.medium}</span>
+          <span className={toneTextClasses('info')}>Low {postureCounts.low}</span>
+          <span className={toneTextClasses('neutral')}>Info {postureCounts.info}</span>
+        </div>
+
         <div className="grid grid-cols-5 gap-1">
           {ASSESSMENT_SUBTABS.map(tab => (
             <button
@@ -327,6 +396,49 @@ export const AssessmentTab: React.FC = () => {
               {tab.label}
             </button>
           ))}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <select
+            value={minSeverity}
+            onChange={e => setMinSeverity(e.target.value as MinSeverity)}
+            title="Minimum severity to show and export"
+            className="px-1 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 rounded shrink-0 focus:outline-none focus:border-blue-800/50"
+          >
+            {SEVERITY_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={() => setOnlyActionable(v => !v)}
+            title="Show only actionable findings (exclude info)"
+            className={[
+              'px-1.5 py-0.5 text-[10px] border rounded shrink-0 transition-colors',
+              onlyActionable
+                ? 'border-blue-800/60 bg-blue-950/30 text-blue-200'
+                : 'border-gray-700 bg-gray-800 text-gray-400 hover:text-white hover:border-gray-600',
+            ].join(' ')}
+          >
+            Actionable
+          </button>
+          <div className="relative flex-1 min-w-0">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search findings…"
+              className="w-full pl-2 pr-5 py-0.5 text-[10px] bg-gray-800 border border-gray-700 rounded text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                title="Clear search"
+                className="absolute top-1/2 right-1 -translate-y-1/2 leading-none text-gray-600 hover:text-gray-300"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
@@ -389,7 +501,7 @@ export const AssessmentTab: React.FC = () => {
           <FindingList
             findings={storageFindings}
             emptyTitle="No storage findings"
-            emptyHint="No sensitive tokens were observed in localStorage or sessionStorage for this context."
+            emptyHint="No sensitive tokens were observed in localStorage, sessionStorage, or IndexedDB for this context."
           />
         )}
       </div>

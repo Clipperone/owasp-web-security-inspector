@@ -275,6 +275,18 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
       ));
     }
 
+    if (parsed.sameSite === 'none' && !parsed.partitioned) {
+      findings.push(finding(
+        `set-cookie-partitioned-${index}-${parsed.name}`,
+        'cookies',
+        'low',
+        'Set-Cookie with SameSite=None is not Partitioned',
+        'Cross-site cookies delivered without the Partitioned attribute are increasingly restricted as browsers move to partitioned third-party storage (CHIPS).',
+        `${requestDescriptor} sets ${parsed.name} with SameSite=None and no Partitioned attribute.`,
+        'Add the Partitioned attribute (CHIPS) to SameSite=None cookies used in third-party contexts, or confirm the cookie is genuinely first-party.',
+      ));
+    }
+
     if (parsed.path === '/' && request.resourceType === 'xmlhttprequest' && looksLikeAuthEndpoint(request.url)) {
       findings.push(finding(
         `set-cookie-path-${index}-${parsed.name}`,
@@ -328,6 +340,11 @@ export function buildAssessmentFindings(params: {
     if (severityDelta !== 0) return severityDelta;
     return left.title.localeCompare(right.title);
   });
+}
+
+/** A finding is "actionable" when it represents a gap to address, i.e. not purely informational. */
+export function isActionableFinding(finding: AssessmentFinding): boolean {
+  return finding.severity !== 'info';
 }
 
 export function getFindingCounts(findings: AssessmentFinding[]): Record<AssessmentFinding['severity'], number> {

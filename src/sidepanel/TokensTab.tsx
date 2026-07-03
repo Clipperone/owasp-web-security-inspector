@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { StorageEntry, StorageScanResult, TokenData } from '../types';
 import { assessManualToken } from '../utils/assessment';
-import { decodeJwt, formatExpiry, isJwt } from '../utils/jwtUtils';
+import { checkNotBefore, decodeJwt, formatExpiry, isJwt } from '../utils/jwtUtils';
 import { SUPPORTED_VERIFY_ALGS, verifyJwt } from '../utils/jwtVerify';
 import type { JwtAlg, VerificationKeyInput, VerifyResult } from '../utils/jwtVerify';
 import { StatusBadge, severityLabel, severityTone } from './ui';
@@ -258,6 +258,11 @@ const TokenCard: React.FC<{
             ) : (
               <span className="text-[9px] uppercase font-bold px-1.5 py-px rounded bg-emerald-900/40 text-emerald-400 border border-emerald-800/50 shrink-0">
                 Valid
+              </span>
+            )}
+            {checkNotBefore(token) && (
+              <span className="text-[9px] uppercase font-bold px-1.5 py-px rounded bg-amber-900/40 text-amber-400 border border-amber-800/50 shrink-0">
+                Not yet valid
               </span>
             )}
           </div>

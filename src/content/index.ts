@@ -172,31 +172,138 @@ function collectHints(key: string, value: string): TokenHint[] {
   return hints;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IndexedDB scanning
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Modern apps (Firebase, OIDC libraries) often keep tokens in IndexedDB rather
+// than Web Storage. We read the current origin's databases read-only and surface
+// token-like string values found inside records, reusing the same `collectHints`
+// gate so detection stays consistent with localStorage/sessionStorage.
+
+const MAX_IDB_ENTRIES = 40;
+const MAX_IDB_KEYS_PER_STORE = 20;
+const MAX_IDB_STRING_VALUES = 8;
+const MAX_IDB_DEPTH = 5;
+const MIN_IDB_STRING_LENGTH = 8;
+
+function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function idbKeyToString(key: IDBValidKey): string {
+  try {
+    return typeof key === 'object' ? JSON.stringify(key) : String(key);
+  } catch {
+    return 'key';
+  }
+}
+
+/** Collect string leaves of a record, bounded by depth and count. */
+function collectRecordStrings(value: unknown, depth: number, out: string[]): void {
+  if (out.length >= MAX_IDB_STRING_VALUES || depth > MAX_IDB_DEPTH) return;
+
+  if (typeof value === 'string') {
+    if (value.length >= MIN_IDB_STRING_LENGTH) out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (out.length >= MAX_IDB_STRING_VALUES) break;
+      collectRecordStrings(item, depth + 1, out);
+    }
+    return;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value as Record<string, unknown>)) {
+      if (out.length >= MAX_IDB_STRING_VALUES) break;
+      collectRecordStrings(item, depth + 1, out);
+    }
+  }
+}
+
+async function scanIndexedDB(): Promise<StorageEntry[]> {
+  const entries: StorageEntry[] = [];
+  const idb = window.indexedDB;
+  if (!idb || typeof idb.databases !== 'function') return entries; // Chrome < 118 or unsupported
+
+  let databases: IDBDatabaseInfo[];
+  try {
+    databases = await idb.databases();
+  } catch {
+    return entries; // access denied (e.g. private mode)
+  }
+
+  for (const info of databases) {
+    if (!info.name || entries.length >= MAX_IDB_ENTRIES) continue;
+    let db: IDBDatabase | null = null;
+    try {
+      db = await idbRequest(idb.open(info.name));
+      for (const storeName of Array.from(db.objectStoreNames)) {
+        if (entries.length >= MAX_IDB_ENTRIES) break;
+        try {
+          const store = db.transaction(storeName, 'readonly').objectStore(storeName);
+          const keys = (await idbRequest(store.getAllKeys())).slice(0, MAX_IDB_KEYS_PER_STORE);
+          for (const recordKey of keys) {
+            if (entries.length >= MAX_IDB_ENTRIES) break;
+            const record = await idbRequest(store.get(recordKey));
+            const entryKey = `${info.name}/${storeName}/${idbKeyToString(recordKey)}`;
+            const strings: string[] = [];
+            collectRecordStrings(record, 0, strings);
+            for (const raw of strings) {
+              if (entries.length >= MAX_IDB_ENTRIES) break;
+              const value = raw.length > MAX_VALUE_LENGTH ? raw.slice(0, MAX_VALUE_LENGTH) : raw;
+              const hints = collectHints(entryKey, value);
+              if (hints.length === 0) continue;
+              entries.push({ area: 'indexedDB', key: entryKey, value, hints, isJwt: isJwt(value) });
+            }
+          }
+        } catch {
+          // Skip an unreadable store; continue with the rest.
+        }
+      }
+    } catch {
+      // Skip an unopenable database; continue with the rest.
+    } finally {
+      db?.close();
+    }
+  }
+
+  return entries;
+}
+
 /**
- * Scans both `localStorage` and `sessionStorage`.
+ * Scans `localStorage`, `sessionStorage`, and IndexedDB.
  *
- * Each storage area access is independently wrapped in try/catch because:
+ * Each area access is independently wrapped in try/catch because:
  *   - Cross-origin iframes throw `SecurityError` on any storage access.
  *   - Some browsers restrict storage in private/incognito contexts.
- *   - One area failing must not abort the scan of the other.
+ *   - One area failing must not abort the scan of the others.
  *
  * @returns A `StorageScanResult` ready to be sent to the background worker.
  */
-function performScan(): StorageScanResult {
+async function performScan(): Promise<StorageScanResult> {
   const entries: StorageEntry[] = [];
 
-  // Scan localStorage
   try {
     entries.push(...scanStorageArea(window.localStorage, 'localStorage'));
   } catch {
     // SecurityError or similar — silently skip this area
   }
 
-  // Scan sessionStorage
   try {
     entries.push(...scanStorageArea(window.sessionStorage, 'sessionStorage'));
   } catch {
     // SecurityError or similar — silently skip this area
+  }
+
+  try {
+    entries.push(...await scanIndexedDB());
+  } catch {
+    // IndexedDB unavailable or blocked — silently skip
   }
 
   return {
@@ -337,7 +444,7 @@ function performPageResourceObservation(): PageResourceObservation {
  */
 async function runScan(): Promise<StorageScanResult | null> {
   try {
-    const result = performScan();
+    const result = await performScan();
 
     await chrome.runtime.sendMessage({
       type:    'STORAGE_SCAN_RESULT',

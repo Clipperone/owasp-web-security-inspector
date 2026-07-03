@@ -8,26 +8,33 @@ cookie e session management, token/JWT, security header e transport, restando
 sempre dentro ciò che il browser può osservare (nessun backend, nessuna chiamata
 esterna).
 
-Direzioni di crescita: rendere i finding più profondi e affidabili, abilitare
-review comparative (snapshot/diff), migliorare triage e leggibilità, e aprire la
-configurabilità — il tutto mantenendo il codice puro, testato e pubblicabile come
-progetto open source.
+Direzioni di crescita residue: migliorare triage e leggibilità, colmare i gap di
+copertura/affidabilità, abilitare review comparative (snapshot/diff), completare
+la reportistica per CI e aprire la configurabilità — mantenendo il codice puro,
+testato e pubblicabile come progetto open source.
 
-## Stato attuale (v0.2.0)
+## Stato attuale (v0.3.0)
 
 Già disponibile:
 
 - ispezione ed editing di cookie, token e header (regole `declarativeNetRequest`)
-- decode JWT locale con controlli strutturali e stato di scadenza
-- assessment OWASP Secure Headers e assessment Transport & TLS passivo
-- **Assessment unificato**: sottotab `Headers`, `Transport & TLS`, `Cookies`,
-  `Tokens`, `Storage` tutti attivi e alimentati dallo stesso motore
-- **report unico** Markdown/JSON su tutte le categorie (`src/utils/report.ts`)
-- UI servita nel **Chrome side panel** e **design system** condiviso
-  (`src/sidepanel/ui`)
-- motore di assessment **modularizzato** in `src/utils/assessment/`
-- unit test con `vitest`, CI GitHub Actions, scaffolding OSS (`LICENSE`,
-  `CONTRIBUTING.md`, `ARCHITECTURE.md`, `CHANGELOG.md`)
+- decode JWT locale e **verifica firma JWT** offline via Web Crypto — HS/RS/PS/ES
+  con secret/PEM/JWK/JWKS, algoritmo esplicito (anti algorithm-confusion),
+  `alg:none` sempre rifiutato (`src/utils/jwtVerify.ts`)
+- assessment OWASP Secure Headers con **analisi CSP per-direttiva**
+  (`src/utils/assessment/csp.ts`): `unsafe-inline`/`unsafe-eval`, sorgenti
+  wildcard e schemi insicuri, direttive difensive mancanti, nonce/hash e
+  `strict-dynamic`, Trusted Types, reporting, policy `Report-Only`
+- assessment Transport & TLS passivo, con controlli aggiuntivi
+  (`src/utils/assessment/pageResources.ts`): **Subresource Integrity**, **mixed
+  content** attivo/passivo, form insicuri, **`ws://`** su pagine HTTPS, e
+  **inventario terze parti** (origini e cookie, euristica eTLD+1)
+- Assessment unificato (sottotab Headers, Transport, Cookies, Tokens, Storage)
+- **report unico** Markdown/JSON con **schema versionato** (`schemaVersion` `1.0`)
+  ed **export filtrato per severità** (`src/utils/report.ts`)
+- UI nel Chrome side panel con design system condiviso (`src/sidepanel/ui`)
+- motore di assessment modularizzato in `src/utils/assessment/`
+- unit test con `vitest` (69), CI GitHub Actions, scaffolding OSS
 
 Per il dettaglio cronologico vedi `CHANGELOG.md` e la storia git.
 
@@ -42,72 +49,48 @@ Per ogni intervento:
 5. aggiornare `README.md`, `ARCHITECTURE.md` e `CHANGELOG.md` se il comportamento
    utente o la struttura cambiano
 
-## Direzioni future (prioritizzate)
+## Direzioni future (riordinate per priorità)
 
-### M1 — Triage e leggibilità dei finding (quick win)
+Le milestone CSP approfondita, verifica JWT + reportistica avanzata e controlli
+osservabili aggiuntivi (SRI/mixed content/terze parti) sono state completate in
+**v0.3.0** e rimosse da questo elenco. I punti **1 e 2** qui sotto sono già
+implementati (in attesa di release); i punti 3–5 restano pianificati. L'ordine è
+rivisto in base al rapporto valore/sforzo e all'aumento del volume di finding.
 
-- barra di **postura sintetica** in cima all'Assessment: rollup severità sempre
-  visibile (`High N · Medium N · Low N`), senza trasformare la vista in dashboard
-- ripristino dei **filtri** per severità, categoria e "solo azionabili", più
-  ricerca testuale sui finding (capacità descritta nella vecchia Fase 7 ma persa
-  nel passaggio al modello a sottotab)
-- conteggi e ordinamento coerenti tra UI e report
+### 1. Triage e leggibilità dei finding ✅ (implementato)
 
-### M2 — Analisi CSP approfondita ✅ (implementato)
+- ✅ barra di **postura sintetica** in cima all'Assessment (`High · Medium · Low · Info`)
+- ✅ **filtri** per severità minima e "solo azionabili" (`isActionableFinding`), più
+  **ricerca testuale** sui finding
+- ✅ conteggi coerenti tra UI e report: gli stessi filtri (`ReportFilter`) guidano sia
+  la vista sia l'export (Copy/Download)
 
-Sostituito il check superficiale (presenza di `unsafe`) con un analizzatore per
-direttiva in `src/utils/assessment/csp.ts` (`assessCsp`):
+### 2. Copertura e affidabilità dei finding ✅ (implementato)
 
-- `unsafe-inline` / `unsafe-eval`, sorgenti wildcard, schemi pericolosi (`http:`/`data:`/`blob:`)
-- assenza di `object-src`, `base-uri`, `frame-ancestors`, `default-src`
-- riconoscimento di nonce/hash e `strict-dynamic` (mitigazione), Trusted Types e reporting
-- declassamento delle policy `Report-Only`; finding dedicati con remediation precisa
+- ✅ **re-scan automatico** su navigazione / cambio tab (`chrome.tabs.onUpdated`/
+  `onActivated`, nessun permesso `webNavigation`)
+- ✅ scan **IndexedDB** oltre a `localStorage`/`sessionStorage` (Chrome 118+, fallback)
+- ✅ **download del report su file** (`owasp-assessment-<host>-<ts>.md/.json`, Blob,
+  nessun permesso `downloads`)
+- ✅ rifiniture: claim JWT **`nbf`** (not-before) e attributo cookie
+  **`Partitioned`/CHIPS**
 
-Riferimento: OWASP Content Security Policy Cheat Sheet.
-Limiti noti: CSP via `<meta>` non osservabile dagli header; policy multiple non
-intersecate (documentato nel modulo).
-
-### M3 — Snapshot & Diff
+### 3. Snapshot & Diff
 
 Il vero salto di qualità per un reviewer.
 
-1. snapshot manuali del contesto corrente: cookies, storage, primary response
-   summary, finding di assessment
-2. supporto agli snapshot tipici: pre-login, post-login, post-logout
-3. vista **diff**: cookie nuovi/rimossi, token comparsi/spariti, header cambiati,
-   finding nuovi/risolti
-4. export del diff in Markdown
+- snapshot manuali del contesto: cookies, storage, primary response, finding
+- punti tipici: pre-login, post-login, post-logout
+- vista **diff**: cookie/token/header/finding comparsi, spariti o cambiati
+- export del diff in Markdown (riusa il seam `filterReport` già presente)
 
-### M4 — Reportistica avanzata e verifica JWT ✅ (implementato, SARIF rimandato)
+### 4. Reportistica per CI: SARIF
 
-- ✅ export filtrato per severità (All / High+Medium / High) in Markdown/JSON
-  (`filterFindings`/`filterReport`); export del diff resta legato a M3
-- ✅ schema JSON stabile e versionato (`schemaVersion` `1.0`, `REPORT_SCHEMA_VERSION`)
-  per riuso in CI / issue template
-- ⏸️ output **SARIF** — rimandato (M4.1); il seam `filterReport` è già riusabile
-- ✅ **verifica firma JWT** con secret/PEM/JWK/JWKS forniti dall'utente, eseguita
-  localmente via **Web Crypto** (`src/utils/jwtVerify.ts`) — solo offline (nessuna
-  chiamata di rete), algoritmo scelto esplicitamente (anti algorithm-confusion),
-  `alg: none` sempre rifiutato; distingue "decode" da "trust verification"
+- output **SARIF 2.1.0** dei finding per pipeline e code scanning; il renderer
+  filtrato esiste già (`filterReport`), resta da mappare severità → `level` e
+  `finding.id` → `ruleId` con un catalogo di regole
 
-### M5 — Controlli aggiuntivi osservabili dal browser ✅ (implementato)
-
-Nuovi finding categoria `transport` in `src/utils/assessment/pageResources.ts`,
-sotto il tab Transport:
-
-- ✅ **Subresource Integrity (SRI)**: `<script>`/`<link>` cross-origin senza
-  `integrity` (scan DOM nel content script)
-- ✅ **inventario terze parti**: origini esterne e cookie di terze parti (info,
-  euristica eTLD+1 in `site.ts` senza public-suffix list)
-- ✅ **mixed content** attivo/passivo, form insicuri e WebSocket `ws://` resi
-  finding espliciti; il segnale di downgrade è calcolato una volta sola
-  (`computeDowngradeSignals`) e condiviso col pannello Transport
-- WebSocket osservati via `webRequest.onBeforeRequest` (nessun nuovo permesso)
-
-Limiti: SRI vede solo il DOM al momento dello scan; `integrityValid` è solo
-formale; i WebSocket aperti prima della registrazione del listener non sono visti.
-
-### M6 — Configurabilità e maturità prodotto
+### 5. Configurabilità e maturità prodotto
 
 - pagina **Options**: soglie configurabili (lifetime cookie/JWT, cosa è
   "sensibile"), toggle dei check, **soppressione/acknowledge** dei finding per
@@ -115,6 +98,15 @@ formale; i WebSocket aperti prima della registrazione del listener non sono vist
 - internazionalizzazione (`chrome.i18n`)
 - tema chiaro (facilitato dalla centralizzazione in `src/sidepanel/ui/status.ts`)
 - storico per-tab degli assessment
+- accessibilità (navigazione da tastiera / ARIA) del side panel
+
+### Enhancement (backlog, non bloccanti)
+
+- CSP: estendere l'analisi a `form-action`, `frame-src`, `worker-src`,
+  `connect-src`, `upgrade-insecure-requests`
+- SRI su risorse iniettate dinamicamente (oggi solo DOM allo scan)
+- JWKS via **URL** per la verifica firma: deroga esplicita al principio "no rete",
+  quindi opt-in e off di default
 
 ### Release
 
@@ -131,12 +123,3 @@ romperebbe il principio del progetto:
 - revoca token o invalidazione sessione lato server
 - forza del secret JWT e qualità del key management
 - compliance formale completa (es. OWASP ASVS)
-
-## Ordine consigliato
-
-1. M1 — postura sintetica e filtri (massimo rapporto valore/sforzo)
-2. M2 — analizzatore CSP
-3. M3 — snapshot & diff
-4. M4 — reportistica avanzata e verifica firma JWT
-5. M5 — controlli aggiuntivi (SRI, terze parti, mixed content)
-6. M6 — Options, soppressione finding, i18n, tema chiaro

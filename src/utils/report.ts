@@ -18,7 +18,7 @@ import type {
   TransportTlsReport,
   TransportTlsStatus,
 } from '../types';
-import { getFindingCounts } from './assessment';
+import { getFindingCounts, isActionableFinding } from './assessment';
 
 /**
  * Version of the exported report shape, so CI consumers and issue templates can
@@ -56,25 +56,45 @@ export function buildFullAssessmentReport(params: {
   };
 }
 
-/** Minimum severity to include when exporting. `medium` means High + Medium. */
-export type MinSeverity = 'all' | 'high' | 'medium';
+/** Minimum severity to include when exporting/displaying. `medium` means High + Medium. */
+export type MinSeverity = 'all' | 'high' | 'medium' | 'low';
 
 export interface ReportFilter {
   minSeverity?: MinSeverity;
   categories?: AssessmentCategory[];
+  /** Keep only actionable findings (severity !== 'info'). */
+  onlyActionable?: boolean;
+  /** Case-insensitive substring matched against a finding's text fields. */
+  search?: string;
 }
 
 const SEVERITY_RANK: Record<AssessmentSeverity, number> = { high: 3, medium: 2, low: 1, info: 0 };
-const MIN_SEVERITY_RANK: Record<MinSeverity, number> = { all: 0, medium: 2, high: 3 };
+const MIN_SEVERITY_RANK: Record<MinSeverity, number> = { all: 0, low: 1, medium: 2, high: 3 };
 
-/** Filter findings by minimum severity and/or category. */
+function findingMatchesSearch(finding: AssessmentFinding, needle: string): boolean {
+  return (
+    finding.title.toLowerCase().includes(needle)
+    || finding.summary.toLowerCase().includes(needle)
+    || finding.evidence.toLowerCase().includes(needle)
+    || finding.remediation.toLowerCase().includes(needle)
+    || (finding.whyItMatters?.toLowerCase().includes(needle) ?? false)
+  );
+}
+
+/** Filter findings by minimum severity, category, actionability, and text search. */
 export function filterFindings(findings: AssessmentFinding[], filter?: ReportFilter): AssessmentFinding[] {
   const minRank = MIN_SEVERITY_RANK[filter?.minSeverity ?? 'all'];
   const categories = filter?.categories;
-  return findings.filter(finding =>
-    SEVERITY_RANK[finding.severity] >= minRank
-    && (categories === undefined || categories.includes(finding.category)),
-  );
+  const onlyActionable = filter?.onlyActionable ?? false;
+  const search = filter?.search?.trim().toLowerCase() ?? '';
+
+  return findings.filter(finding => {
+    if (SEVERITY_RANK[finding.severity] < minRank) return false;
+    if (categories !== undefined && !categories.includes(finding.category)) return false;
+    if (onlyActionable && !isActionableFinding(finding)) return false;
+    if (search !== '' && !findingMatchesSearch(finding, search)) return false;
+    return true;
+  });
 }
 
 /**

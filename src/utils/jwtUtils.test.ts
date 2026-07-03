@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { decodeJwt, formatExpiry, isJwt } from './jwtUtils';
+import { checkNotBefore, decodeJwt, formatExpiry, isJwt } from './jwtUtils';
 
 function base64UrlEncode(value: unknown): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -53,5 +53,35 @@ describe('jwtUtils', () => {
   test('does not treat arbitrary dot-separated strings as JWTs', () => {
     expect(isJwt('hello.world.signature')).toBe(false);
     expect(decodeJwt('hello.world.signature').ok).toBe(false);
+  });
+});
+
+describe('checkNotBefore', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function decode(payload: Record<string, unknown>) {
+    const result = decodeJwt(createJwt(payload));
+    if (!result.ok) throw new Error(result.error);
+    return result.token;
+  }
+
+  test('flags a token whose nbf is in the future', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-24T12:00:00Z'));
+    const future = Math.floor(new Date('2026-03-24T13:00:00Z').getTime() / 1_000);
+
+    const result = checkNotBefore(decode({ sub: 'user', nbf: future }));
+    expect(result?.reason).toContain('Not valid until');
+  });
+
+  test('returns null when nbf is in the past or absent', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-24T12:00:00Z'));
+    const past = Math.floor(new Date('2026-03-24T11:00:00Z').getTime() / 1_000);
+
+    expect(checkNotBefore(decode({ sub: 'user', nbf: past }))).toBeNull();
+    expect(checkNotBefore(decode({ sub: 'user' }))).toBeNull();
   });
 });

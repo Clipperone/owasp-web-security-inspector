@@ -400,3 +400,51 @@ describe('CSP per-directive analysis', () => {
     expect(titles).toContain("CSP script-src allows 'unsafe-inline'");
   });
 });
+
+describe('coverage & correctness additions (M2)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('flags a JWT stored in IndexedDB as high', () => {
+    const jwt = createJwt({ sub: 'user' });
+    const entries: StorageEntry[] = [
+      { area: 'indexedDB', key: 'firebaseLocalStorageDb/firebaseLocalStorage/fbase_key', value: jwt, hints: ['jwt-value'], isJwt: true },
+    ];
+
+    const finding = assessBrowserTokens([], entries).find(f => f.title === 'JWT stored in IndexedDB');
+    expect(finding?.severity).toBe('high');
+  });
+
+  test('flags a JWT whose nbf is in the future', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-24T12:00:00Z'));
+    const nbf = Math.floor(new Date('2026-03-24T18:00:00Z').getTime() / 1_000);
+    const jwt = createJwt({ sub: 'user', nbf });
+    const entries: StorageEntry[] = [
+      { area: 'localStorage', key: 'access_token', value: jwt, hints: ['jwt-value'], isJwt: true },
+    ];
+
+    const titles = assessBrowserTokens([], entries).map(f => f.title);
+    expect(titles).toContain('JWT is not yet valid (nbf in the future)');
+  });
+
+  test('flags a cross-site cookie that is not Partitioned', () => {
+    const cookies = [createCookie({ name: 'session', secure: true, httpOnly: true, sameSite: 'no_restriction' })];
+    const finding = assessCookiesForUrl(cookies, 'https://app.example.com/')
+      .find(f => f.title === 'Cross-site cookie is not Partitioned');
+    expect(finding?.severity).toBe('low');
+  });
+
+  test('does not flag a partitioned cross-site cookie', () => {
+    const cookies = [createCookie({
+      name: 'session',
+      secure: true,
+      httpOnly: true,
+      sameSite: 'no_restriction',
+      partitionKey: { topLevelSite: 'https://app.example.com' },
+    })];
+    const titles = assessCookiesForUrl(cookies, 'https://app.example.com/').map(f => f.title);
+    expect(titles).not.toContain('Cross-site cookie is not Partitioned');
+  });
+});

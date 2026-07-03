@@ -121,7 +121,7 @@ export interface HeaderRuleDraft {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The web storage area the entry was found in. */
-export type WebStorageArea = 'localStorage' | 'sessionStorage';
+export type WebStorageArea = 'localStorage' | 'sessionStorage' | 'indexedDB';
 
 /** Reason an entry was flagged as a potential authentication token. */
 export type TokenHint =
@@ -337,7 +337,7 @@ export interface SetCookieAssessmentSummary {
   persistedSensitiveNames: string[];
 }
 
-export type TokenAssessmentOrigin = 'cookie' | 'localStorage' | 'sessionStorage' | 'manual';
+export type TokenAssessmentOrigin = 'cookie' | 'localStorage' | 'sessionStorage' | 'indexedDB' | 'manual';
 
 export interface TokenAssessmentSummary {
   observedCount: number;

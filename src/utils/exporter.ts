@@ -79,3 +79,39 @@ export function exportToNetscape(cookies: chrome.cookies.Cookie[]): string {
 
   return lines.join('\n');
 }
+
+/**
+ * Builds a filesystem-safe report filename such as
+ * `owasp-assessment-app.example.com-2026-07-03T14-32-15.md`.
+ *
+ * @param host - Page hostname (empty falls back to `unknown-host`).
+ * @param iso  - An ISO 8601 timestamp (e.g. `new Date().toISOString()`).
+ * @param ext  - File extension without the dot (`md` or `json`).
+ */
+export function buildReportFilename(host: string, iso: string, ext: string): string {
+  const safeHost = (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]/g, '_');
+  // 2026-07-03T14:32:15.123Z → 2026-07-03T14-32-15
+  const stamp = iso.replace(/[:.]/g, '-').replace(/-\d{3}Z$/, '').replace(/Z$/, '');
+  return `owasp-assessment-${safeHost}-${stamp}.${ext}`;
+}
+
+/**
+ * Triggers a client-side file download from an extension page (e.g. the side
+ * panel) using a Blob URL and a synthetic `<a download>` click. Requires no
+ * `downloads` permission.
+ */
+export function downloadTextFile(filename: string, mime: string, content: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

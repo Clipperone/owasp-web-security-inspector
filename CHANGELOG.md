@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-04
+
+### Added
+
+- **Triage & readability (roadmap M1).** A synthetic **posture bar** (High · Medium ·
+  Low · Info) sits atop the Assessment tab, plus per-finding **filters**: minimum
+  severity, an "Actionable only" toggle (`isActionableFinding` = severity ≠ info),
+  and a text **search** across finding fields. The filters drive both the displayed
+  lists and the exported report, so the posture counts and the report always agree
+  (`filterFindings`/`filterReport` in `src/utils/report.ts`).
+- **Report download to file (roadmap M2).** A new **Download** button saves the
+  report as `owasp-assessment-<host>-<timestamp>.md/.json` via a Blob download
+  (`downloadTextFile`/`buildReportFilename` in `src/utils/exporter.ts`) — no new
+  permission.
+- **Automatic re-scan on navigation (roadmap M2).** The side panel listens to
+  `chrome.tabs.onUpdated`/`onActivated` and refreshes the assessment when the active
+  tab navigates (full load or SPA route change) or when the user switches tabs — no
+  `webNavigation` permission required.
+- **IndexedDB token scanning (roadmap M2).** The content script now also scans the
+  origin's IndexedDB (Chrome 118+, graceful fallback), surfacing token-like values as
+  `high`-severity storage findings. The Storage meta line shows a Local · Session ·
+  IDB breakdown.
+- **JWT `nbf` and cookie `Partitioned`/CHIPS checks (roadmap M2).** A not-yet-valid
+  JWT (`nbf` in the future) raises an info finding and a "Not yet valid" badge
+  (`checkNotBefore` in `src/utils/jwtUtils.ts`); a cross-site (`SameSite=None`) cookie
+  without the Partitioned attribute raises a low finding, for both the live cookie jar
+  and observed `Set-Cookie` responses.
+
+### Changed
+
+- The Assessment export replaces the separate severity-scope selector with the shared
+  triage filters: **Copy** and **Download** honour the active filters. `MinSeverity`
+  gains a `low` level.
+
 ## [0.3.0] - 2026-07-03
 
 ### Added

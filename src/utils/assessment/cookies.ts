@@ -146,6 +146,20 @@ export function assessCookiesForUrl(cookies: chrome.cookies.Cookie[], activeUrl:
         'Consider renaming the cookie with the __Secure- prefix if backend compatibility allows it.',
       ));
     }
+
+    // CHIPS: a cross-site (SameSite=None) cookie that is not partitioned. `partitionKey`
+    // presence on the cookie object is the browser-observable signal that it is partitioned.
+    if (cookie.sameSite === 'no_restriction' && !cookie.partitionKey) {
+      findings.push(finding(
+        `cookie-partitioned-missing-${cookie.name}-${cookie.domain}-${cookie.path}`,
+        'cookies',
+        'low',
+        'Cross-site cookie is not Partitioned',
+        'A SameSite=None cookie without the Partitioned attribute is shared across top-level sites and is increasingly restricted as browsers move to partitioned third-party storage (CHIPS).',
+        `${cookie.name} on ${cookie.domain}${cookie.path} uses SameSite=None and is not partitioned.`,
+        'If the cookie is used in third-party contexts, add the Partitioned attribute (CHIPS). If it should be first-party, prefer SameSite=Lax or Strict.',
+      ));
+    }
   }
 
   for (const [name, scopedCookies] of cookieNames) {

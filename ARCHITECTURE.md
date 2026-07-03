@@ -80,8 +80,12 @@ nothing is computed in React components.
 single `FullAssessmentReport` and serializes it to Markdown or JSON, so exports
 stay consistent with what the UI shows. The report carries a stable
 `schemaVersion` (`REPORT_SCHEMA_VERSION`) for CI consumers, and `filterFindings`
-/`filterReport` scope the exported findings by severity/category (also the seam a
-future snapshot diff will reuse).
+/`filterReport` scope the exported findings by minimum severity, category,
+actionability (`isActionableFinding`), and text search — the same `ReportFilter`
+that drives the Assessment tab's posture bar and filters, and the seam a future
+snapshot diff will reuse. `exporter.ts` adds `downloadTextFile`/`buildReportFilename`
+for saving the report to a file from the side panel (Blob download, no extra
+permission).
 
 `jwtVerify.ts` verifies JWT signatures locally with the Web Crypto API
 (`crypto.subtle`). It takes the algorithm from an explicit caller choice (never

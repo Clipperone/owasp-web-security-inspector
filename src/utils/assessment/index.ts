@@ -8,7 +8,7 @@ export {
   assessManualToken,
   getTokenAssessmentSummary,
 } from './tokens';
-export { assessHeaders, buildAssessmentFindings, getFindingCounts } from './findings';
+export { assessHeaders, buildAssessmentFindings, getFindingCounts, isActionableFinding } from './findings';
 export {
   assessSubresourceIntegrity,
   assessMixedContent,
