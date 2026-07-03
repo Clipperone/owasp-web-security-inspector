@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { StorageEntry, StorageScanResult, TokenData } from '../types';
 import { assessManualToken } from '../utils/assessment';
 import { decodeJwt, formatExpiry, isJwt } from '../utils/jwtUtils';
+import { SUPPORTED_VERIFY_ALGS, verifyJwt } from '../utils/jwtVerify';
+import type { JwtAlg, VerificationKeyInput, VerifyResult } from '../utils/jwtVerify';
 import { StatusBadge, severityLabel, severityTone } from './ui';
 
 // ── Timestamp helper ───────────────────────────────────────────────────────────
@@ -99,6 +101,123 @@ function JsonTree({ value, depth = 0, parentKey }: { value: unknown; depth?: num
   return <span className="text-gray-400">{String(value)}</span>;
 }
 
+// ── Signature verification (opt-in, local, Web Crypto) ──────────────────────────
+
+const KEY_TYPE_OPTIONS: Array<{ id: VerificationKeyInput['kind']; label: string; placeholder: string }> = [
+  { id: 'hmac-secret', label: 'Secret (HS*)', placeholder: 'Shared HMAC secret…' },
+  { id: 'pem-spki', label: 'PEM public key', placeholder: '-----BEGIN PUBLIC KEY-----\n…' },
+  { id: 'jwk', label: 'JWK', placeholder: '{ "kty": "RSA", … }' },
+  { id: 'jwks', label: 'JWKS', placeholder: '{ "keys": [ … ] }' },
+];
+
+function resultTone(status: VerifyResult['status']): 'ok' | 'bad' | 'warn' {
+  switch (status) {
+    case 'verified': return 'ok';
+    case 'unsupported-alg': return 'warn';
+    default: return 'bad';
+  }
+}
+
+function resultLabel(status: VerifyResult['status']): string {
+  switch (status) {
+    case 'verified': return 'Verified';
+    case 'invalid': return 'Invalid';
+    case 'unsupported-alg': return 'Unsupported';
+    case 'error': return 'Error';
+  }
+}
+
+function buildKeyInput(kind: VerificationKeyInput['kind'], text: string): VerificationKeyInput {
+  switch (kind) {
+    case 'hmac-secret': return { kind, secret: text };
+    case 'pem-spki': return { kind, pem: text };
+    case 'jwk': return { kind, jwk: JSON.parse(text) as JsonWebKey };
+    case 'jwks': return { kind, jwks: JSON.parse(text) as { keys: JsonWebKey[] } };
+  }
+}
+
+const SignatureVerifyPanel: React.FC<{ token: TokenData; onResult: (result: VerifyResult) => void }> = ({ token, onResult }) => {
+  const headerAlg = typeof token.header.alg === 'string' ? token.header.alg : '';
+  const initialAlg: JwtAlg = (SUPPORTED_VERIFY_ALGS as string[]).includes(headerAlg) ? (headerAlg as JwtAlg) : 'HS256';
+  const [alg, setAlg] = useState<JwtAlg>(initialAlg);
+  const [keyKind, setKeyKind] = useState<VerificationKeyInput['kind']>(initialAlg.startsWith('HS') ? 'hmac-secret' : 'pem-spki');
+  const [keyText, setKeyText] = useState('');
+  const [result, setResult] = useState<VerifyResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const mismatch = headerAlg !== '' && headerAlg !== alg;
+  const placeholder = KEY_TYPE_OPTIONS.find(o => o.id === keyKind)?.placeholder ?? '';
+
+  const handleVerify = async () => {
+    setBusy(true);
+    let outcome: VerifyResult;
+    try {
+      outcome = await verifyJwt(token.raw, { expectedAlg: alg, key: buildKeyInput(keyKind, keyText) });
+    } catch (err) {
+      outcome = { status: 'error', reason: err instanceof Error ? err.message : 'Invalid key input.' };
+    }
+    setResult(outcome);
+    onResult(outcome);
+    setBusy(false);
+  };
+
+  return (
+    <div className="space-y-2 rounded border border-gray-800 bg-gray-950/40 px-2.5 py-2">
+      <p className="text-[10px] uppercase tracking-widest text-gray-500 font-medium select-none">Verify signature</p>
+      <p className="text-[10px] text-gray-600 leading-relaxed">
+        Runs locally via Web Crypto using a key you supply — nothing is sent anywhere. The algorithm you pick is used for
+        verification (not the token header), which blocks algorithm-confusion attacks.
+      </p>
+      <div className="grid grid-cols-2 gap-1.5">
+        <label className="block text-[10px] text-gray-500">
+          Algorithm
+          <select
+            value={alg}
+            onChange={e => setAlg(e.target.value as JwtAlg)}
+            className="mt-0.5 w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-600"
+          >
+            {SUPPORTED_VERIFY_ALGS.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </label>
+        <label className="block text-[10px] text-gray-500">
+          Key type
+          <select
+            value={keyKind}
+            onChange={e => setKeyKind(e.target.value as VerificationKeyInput['kind'])}
+            className="mt-0.5 w-full bg-gray-800 border border-gray-700 rounded px-1.5 py-1 text-[11px] text-gray-200 focus:outline-none focus:border-blue-600"
+          >
+            {KEY_TYPE_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {mismatch && (
+        <p className="text-[10px] text-amber-400 leading-relaxed">
+          Token header alg is <span className="font-mono">{headerAlg}</span> but you selected <span className="font-mono">{alg}</span>.
+        </p>
+      )}
+      <textarea
+        value={keyText}
+        onChange={e => setKeyText(e.target.value)}
+        placeholder={placeholder}
+        rows={3}
+        className="w-full px-2 py-1.5 text-[11px] font-mono bg-gray-800 border border-gray-700 rounded text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600 resize-none leading-relaxed"
+      />
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => { void handleVerify(); }}
+          disabled={busy || keyText.trim().length === 0}
+          className="px-2 py-1 text-[11px] rounded border border-gray-700 bg-gray-800 text-gray-300 hover:text-blue-400 hover:border-blue-800/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {busy ? 'Verifying…' : 'Verify'}
+        </button>
+        {result && <StatusBadge tone={resultTone(result.status)}>{resultLabel(result.status)}</StatusBadge>}
+        {result?.status === 'error' && <span className="text-[10px] text-red-400 min-w-0 truncate">{result.reason}</span>}
+        {result?.status === 'unsupported-alg' && <span className="text-[10px] text-amber-400">{result.alg}</span>}
+      </div>
+    </div>
+  );
+};
+
 // ── Token card ─────────────────────────────────────────────────────────────────
 
 const TokenCard: React.FC<{
@@ -108,6 +227,7 @@ const TokenCard: React.FC<{
   const [headerOpen,  setHeaderOpen]  = useState(false);
   const [payloadOpen, setPayloadOpen] = useState(true);
   const [sigOpen,     setSigOpen]     = useState(false);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
 
   const { token } = view;
   const expiry = formatExpiry(token);
@@ -226,17 +346,17 @@ const TokenCard: React.FC<{
         >
           <span className="w-1.5 h-1.5 rounded-full bg-gray-500 shrink-0" />
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold flex-1 text-left">Signature</span>
-          <span className="text-[9px] text-gray-700 mr-1 select-none">not verified</span>
+          {verifyResult
+            ? <span className="mr-1"><StatusBadge tone={resultTone(verifyResult.status)}>{resultLabel(verifyResult.status)}</StatusBadge></span>
+            : <span className="text-[9px] text-gray-700 mr-1 select-none">not verified</span>}
           <IconChevron open={sigOpen} />
         </button>
         {sigOpen && (
-          <div className="px-3 pb-3 border-t border-gray-800/40">
-            <p className="text-[10px] text-gray-700 mb-1.5 leading-relaxed">
-              Signature verification requires the secret or public key and is intentionally not performed in this tool.
-            </p>
+          <div className="px-3 pb-3 border-t border-gray-800/40 space-y-2">
             <div className="font-mono text-[10px] text-gray-500 break-all bg-gray-950/60 rounded px-2 py-1.5">
               {token.signature || <span className="text-gray-700 italic">empty (alg: none)</span>}
             </div>
+            <SignatureVerifyPanel token={token} onResult={setVerifyResult} />
           </div>
         )}
       </div>

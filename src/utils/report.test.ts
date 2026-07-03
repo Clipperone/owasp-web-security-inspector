@@ -2,7 +2,14 @@ import { describe, expect, test } from 'vitest';
 import type { CachedRequest } from '../types';
 import { buildAssessmentFindings, getOwaspHeaderAssessment } from './assessment';
 import { buildTransportTlsSection } from './transportTls';
-import { buildFullAssessmentReport, renderReportJson, renderReportMarkdown } from './report';
+import {
+  REPORT_SCHEMA_VERSION,
+  buildFullAssessmentReport,
+  filterFindings,
+  filterReport,
+  renderReportJson,
+  renderReportMarkdown,
+} from './report';
 
 function createRequest(overrides: Partial<CachedRequest> = {}): CachedRequest {
   return {
@@ -72,10 +79,43 @@ describe('unified assessment report', () => {
   });
 
   test('json export round-trips and preserves context', () => {
-    const parsed = JSON.parse(renderReportJson(buildReport())) as { activeUrl: string; generatedAt: string; findings: unknown[] };
+    const parsed = JSON.parse(renderReportJson(buildReport())) as { schemaVersion: string; activeUrl: string; generatedAt: string; findings: unknown[] };
 
+    expect(parsed.schemaVersion).toBe('1.0');
     expect(parsed.activeUrl).toBe(activeUrl);
     expect(parsed.generatedAt).toBe('2026-01-01T00:00:00.000Z');
     expect(Array.isArray(parsed.findings)).toBe(true);
+  });
+
+  test('exposes a stable schema version', () => {
+    expect(buildReport().schemaVersion).toBe(REPORT_SCHEMA_VERSION);
+    expect(REPORT_SCHEMA_VERSION).toBe('1.0');
+  });
+
+  test('filterFindings keeps only findings at or above the minimum severity', () => {
+    const report = buildReport();
+    const highOnly = filterFindings(report.findings, { minSeverity: 'high' });
+    const highPlusMedium = filterFindings(report.findings, { minSeverity: 'medium' });
+
+    expect(highOnly.every(f => f.severity === 'high')).toBe(true);
+    expect(highPlusMedium.every(f => f.severity === 'high' || f.severity === 'medium')).toBe(true);
+    expect(highPlusMedium.length).toBeGreaterThanOrEqual(highOnly.length);
+    expect(filterFindings(report.findings, { minSeverity: 'all' })).toHaveLength(report.findings.length);
+  });
+
+  test('filterFindings can restrict by category', () => {
+    const report = buildReport();
+    const cookiesOnly = filterFindings(report.findings, { categories: ['cookies'] });
+    expect(cookiesOnly.every(f => f.category === 'cookies')).toBe(true);
+  });
+
+  test('filterReport recomputes severity counts for the filtered set', () => {
+    const filtered = filterReport(buildReport(), { minSeverity: 'high' });
+    const total = filtered.severityCounts.high + filtered.severityCounts.medium + filtered.severityCounts.low + filtered.severityCounts.info;
+
+    expect(filtered.findings.every(f => f.severity === 'high')).toBe(true);
+    expect(total).toBe(filtered.findings.length);
+    expect(filtered.severityCounts.medium).toBe(0);
+    expect(filtered.schemaVersion).toBe('1.0');
   });
 });

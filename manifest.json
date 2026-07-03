@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OWASP Web Security Inspector",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Inspect and assess cookies, tokens, Set-Cookie responses, and HTTP security headers using OWASP-inspired browser-side review.",
 
   "minimum_chrome_version": "114",

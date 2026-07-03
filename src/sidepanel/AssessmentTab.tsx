@@ -6,12 +6,15 @@ import type {
   HeaderAssessmentKind,
   HeaderAssessmentReport,
   HeaderAssessmentStatus,
+  ObservedWebSocket,
+  PageResourceObservation,
   StorageScanResult,
   TransportDomObservation,
 } from '../types';
 import { buildAssessmentFindings, getOwaspHeaderAssessment } from '../utils/assessment';
 import { buildTransportTlsSection } from '../utils/transportTls';
-import { buildFullAssessmentReport, renderReportJson, renderReportMarkdown } from '../utils/report';
+import { buildFullAssessmentReport, filterReport, renderReportJson, renderReportMarkdown } from '../utils/report';
+import type { MinSeverity } from '../utils/report';
 import { TransportTlsPanel } from './TransportTlsPanel';
 import { FindingList } from './FindingCard';
 import {
@@ -49,6 +52,12 @@ const STATUS_SORT_WEIGHT: Record<HeaderAssessmentStatus, number> = {
 };
 
 const HEADER_SECTION_ORDER: HeaderAssessmentKind[] = ['required', 'advisory', 'deprecated'];
+
+const SCOPE_LABELS: Record<MinSeverity, string> = {
+  all: 'All severities',
+  medium: 'High + Medium',
+  high: 'High only',
+};
 
 function groupChecks(report: HeaderAssessmentReport): Record<HeaderAssessmentKind, HeaderAssessmentCheck[]> {
   return report.checks.reduce<Record<HeaderAssessmentKind, HeaderAssessmentCheck[]>>((acc, check) => {
@@ -132,9 +141,13 @@ export const AssessmentTab: React.FC = () => {
   const [cookies, setCookies] = useState<chrome.cookies.Cookie[]>([]);
   const [transportObservation, setTransportObservation] = useState<TransportDomObservation | null>(null);
   const [storageScan, setStorageScan] = useState<StorageScanResult | null>(null);
+  const [pageResources, setPageResources] = useState<PageResourceObservation | null>(null);
+  const [webSockets, setWebSockets] = useState<ObservedWebSocket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [exportFormat, setExportFormat] = useState<'markdown' | 'json'>('markdown');
+  const [exportScope, setExportScope] = useState<MinSeverity>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -152,19 +165,24 @@ export const AssessmentTab: React.FC = () => {
       await Promise.all([
         chrome.runtime.sendMessage({ type: 'RUN_TRANSPORT_SCAN' }).catch(() => null),
         chrome.runtime.sendMessage({ type: 'RUN_STORAGE_SCAN' }).catch(() => null),
+        chrome.runtime.sendMessage({ type: 'RUN_PAGE_RESOURCE_SCAN' }).catch(() => null),
       ]);
 
-      const [headersResponse, transportResponse, storageResponse, cookiesResponse] = await Promise.all([
+      const [headersResponse, transportResponse, storageResponse, cookiesResponse, pageResourcesResponse, webSocketsResponse] = await Promise.all([
         chrome.runtime.sendMessage({ type: 'GET_TAB_HEADERS', payload: info.tabId }),
         chrome.runtime.sendMessage({ type: 'GET_TRANSPORT_OBSERVATIONS' }),
         chrome.runtime.sendMessage({ type: 'GET_STORAGE_TOKENS' }),
         chrome.runtime.sendMessage({ type: 'GET_COOKIES', payload: info.url }),
+        chrome.runtime.sendMessage({ type: 'GET_PAGE_RESOURCES' }),
+        chrome.runtime.sendMessage({ type: 'GET_TAB_WEBSOCKETS', payload: info.tabId }),
       ]);
 
       setRequests(headersResponse?.success ? (headersResponse.data as CachedRequest[] ?? []) : []);
       setTransportObservation(transportResponse?.success ? (transportResponse.data as TransportDomObservation | null ?? null) : null);
       setStorageScan(storageResponse?.success ? (storageResponse.data as StorageScanResult | null ?? null) : null);
       setCookies(cookiesResponse?.success ? (cookiesResponse.data as chrome.cookies.Cookie[] ?? []) : []);
+      setPageResources(pageResourcesResponse?.success ? (pageResourcesResponse.data as PageResourceObservation | null ?? null) : null);
+      setWebSockets(webSocketsResponse?.success ? (webSocketsResponse.data as ObservedWebSocket[] ?? []) : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assessment failed to load.');
     } finally {
@@ -192,39 +210,49 @@ export const AssessmentTab: React.FC = () => {
   );
 
   const findings = useMemo(
-    () => buildAssessmentFindings({ activeUrl, cookies, storageEntries, requests }),
-    [activeUrl, cookies, storageEntries, requests],
+    () => buildAssessmentFindings({
+      activeUrl,
+      cookies,
+      storageEntries,
+      requests,
+      pageResources,
+      domObservation: transportObservation,
+      webSockets,
+    }),
+    [activeUrl, cookies, storageEntries, requests, pageResources, transportObservation, webSockets],
   );
 
   const cookieFindings = useMemo(() => findings.filter(f => f.category === 'cookies'), [findings]);
   const tokenFindings = useMemo(() => findings.filter(f => f.category === 'tokens'), [findings]);
   const storageFindings = useMemo(() => findings.filter(f => f.category === 'storage'), [findings]);
   const headerFindings = useMemo(() => findings.filter(f => f.category === 'headers'), [findings]);
+  const transportFindings = useMemo(() => findings.filter(f => f.category === 'transport'), [findings]);
 
-  const copyReport = useCallback(async (format: 'markdown' | 'json') => {
-    const report = buildFullAssessmentReport({
+  const copyReport = useCallback(async () => {
+    const base = buildFullAssessmentReport({
       generatedAt: new Date().toISOString(),
       activeUrl,
       headers: headerReport,
       transport: transportReport,
       findings,
     });
-    const payload = format === 'markdown' ? renderReportMarkdown(report) : renderReportJson(report);
+    const report = filterReport(base, { minSeverity: exportScope });
+    const payload = exportFormat === 'markdown' ? renderReportMarkdown(report) : renderReportJson(report);
 
     try {
       await navigator.clipboard.writeText(payload);
-      setCopyToast(format === 'markdown' ? 'Full Markdown report copied.' : 'Full JSON report copied.');
+      setCopyToast(`Copied ${exportFormat === 'markdown' ? 'Markdown' : 'JSON'} · ${SCOPE_LABELS[exportScope]}.`);
       window.setTimeout(() => setCopyToast(null), 2200);
     } catch {
       setCopyToast('Clipboard copy failed.');
       window.setTimeout(() => setCopyToast(null), 2200);
     }
-  }, [activeUrl, headerReport, transportReport, findings]);
+  }, [activeUrl, headerReport, transportReport, findings, exportFormat, exportScope]);
 
   const metaLine = (() => {
     switch (activeSubtab) {
       case 'transport':
-        return `HTTPS requests: ${transportReport.observedHttpsRequestCount} · HTTP requests: ${transportReport.observedHttpRequestCount} · HTTP links in DOM: ${transportObservation?.absoluteHttpLinks.length ?? 0}`;
+        return `HTTPS requests: ${transportReport.observedHttpsRequestCount} · HTTP requests: ${transportReport.observedHttpRequestCount} · Transport findings: ${transportFindings.length} · WebSockets: ${webSockets.length}`;
       case 'cookies':
         return `Cookies in jar: ${cookies.length} · Cookie findings: ${cookieFindings.length}`;
       case 'tokens':
@@ -254,19 +282,31 @@ export const AssessmentTab: React.FC = () => {
         >
           Refresh
         </button>
+        <select
+          value={exportFormat}
+          onChange={e => setExportFormat(e.target.value as 'markdown' | 'json')}
+          title="Export format"
+          className="px-1 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 rounded transition-colors shrink-0 focus:outline-none focus:border-blue-800/50"
+        >
+          <option value="markdown">MD</option>
+          <option value="json">JSON</option>
+        </select>
+        <select
+          value={exportScope}
+          onChange={e => setExportScope(e.target.value as MinSeverity)}
+          title="Severity scope for the exported findings"
+          className="px-1 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 rounded transition-colors shrink-0 focus:outline-none focus:border-blue-800/50"
+        >
+          <option value="all">All</option>
+          <option value="medium">High+Med</option>
+          <option value="high">High</option>
+        </select>
         <button
-          onClick={() => { void copyReport('markdown'); }}
+          onClick={() => { void copyReport(); }}
           className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:border-emerald-800/50 rounded transition-colors shrink-0"
-          title="Copy the full assessment report (all categories) in Markdown"
+          title="Copy the assessment report to the clipboard"
         >
-          Copy MD
-        </button>
-        <button
-          onClick={() => { void copyReport('json'); }}
-          className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-purple-400 hover:border-purple-800/50 rounded transition-colors shrink-0"
-          title="Copy the full assessment report (all categories) in JSON"
-        >
-          Copy JSON
+          Copy
         </button>
       </div>
 
@@ -325,7 +365,14 @@ export const AssessmentTab: React.FC = () => {
             </>
           )
         ) : activeSubtab === 'transport' ? (
-          <TransportTlsPanel report={transportReport} />
+          <>
+            <TransportTlsPanel report={transportReport} />
+            {transportFindings.length > 0 && (
+              <Section title="Resource, mixed-content & third-party findings" meta={<span className="text-gray-500">{transportFindings.length}</span>}>
+                <FindingList findings={transportFindings} emptyTitle="No additional transport findings" />
+              </Section>
+            )}
+          </>
         ) : activeSubtab === 'cookies' ? (
           <FindingList
             findings={cookieFindings}

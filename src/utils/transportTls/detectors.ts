@@ -5,6 +5,7 @@ import type {
 import {
   buildEvidence,
   buildTransportCheck,
+  computeDowngradeSignals,
   formatUrlForEvidence,
   getFirstHeaderValue,
   getHeaderValues,
@@ -283,16 +284,7 @@ export function detectHstsPosture(inputs: TransportTlsInputs): TransportTlsCheck
 }
 
 export function detectDowngradeSignals(inputs: TransportTlsInputs): TransportTlsCheck {
-  const pageIsHttps = isHttpsUrl(inputs.activeUrl);
-  const httpFetches = pageIsHttps
-    ? inputs.requests.filter(request => request.resourceType === 'xmlhttprequest' && isHttpUrl(request.url))
-    : [];
-  const redirectsToHttp = inputs.requests.filter(request => {
-    const location = getFirstHeaderValue(request, 'location');
-    return typeof location === 'string' && isHttpUrl(location);
-  });
-  const httpLinks = pageIsHttps ? (inputs.domObservation?.absoluteHttpLinks || []) : [];
-  const httpForms = pageIsHttps ? (inputs.domObservation?.forms || []).filter(form => isHttpUrl(form.action)) : [];
+  const { pageIsHttps, httpFetches, redirectsToHttp, httpLinks, httpForms } = computeDowngradeSignals(inputs);
 
   if (inputs.requests.length === 0 && !inputs.domObservation) {
     return buildTransportCheck({

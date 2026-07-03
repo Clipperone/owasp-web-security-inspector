@@ -170,6 +170,48 @@ export interface TransportDomObservation {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Page resource inspection types  (SRI / mixed content — content → background)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A single subresource (`<script src>` / `<link rel=stylesheet>`) seen in the DOM. */
+export interface ObservedPageResource {
+  /** Absolute URL of the subresource. */
+  url: string;
+  kind: 'script' | 'stylesheet';
+  /** True when the resource origin differs from the page origin. */
+  crossOrigin: boolean;
+  /** The element's `crossorigin` attribute value, if any. */
+  crossOriginAttr?: string;
+  /** True when a non-empty `integrity` attribute is present. */
+  hasIntegrity: boolean;
+  /**
+   * Format-only validity of the integrity attribute (one or more
+   * `sha(256|384|512)-<base64>` hashes). This is NOT a cryptographic check —
+   * the browser itself enforces the actual hash match.
+   */
+  integrityValid?: boolean;
+}
+
+/** Result of scanning the current document for subresources. */
+export interface PageResourceObservation {
+  pageUrl: string;
+  scannedAt: string;
+  scripts: ObservedPageResource[];
+  stylesheets: ObservedPageResource[];
+  /** True when the observed counts were capped, so the view can note it. */
+  truncated: boolean;
+}
+
+/** A WebSocket handshake observed by the background webRequest listener. */
+export interface ObservedWebSocket {
+  url: string;
+  /** True for `wss://`, false for `ws://`. */
+  secure: boolean;
+  /** Date.now() at the moment of capture. */
+  timestamp: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Live response header cache types  (webRequest → background → popup)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -328,6 +370,12 @@ export type MessageType =
   | 'TRANSPORT_SCAN_RESULT'
   | 'GET_TRANSPORT_OBSERVATIONS'
   | 'RUN_TRANSPORT_SCAN'
+  // Page subresource observations for SRI / mixed content
+  | 'PAGE_RESOURCE_SCAN_RESULT'
+  | 'GET_PAGE_RESOURCES'
+  | 'RUN_PAGE_RESOURCE_SCAN'
+  // Observed WebSocket connections for the active tab
+  | 'GET_TAB_WEBSOCKETS'
   // Tab info
   | 'GET_ACTIVE_TAB_INFO'
   // Live response header cache

@@ -1,4 +1,11 @@
-import type { AssessmentFinding, CachedRequest, StorageEntry } from '../../types';
+import type {
+  AssessmentFinding,
+  CachedRequest,
+  ObservedWebSocket,
+  PageResourceObservation,
+  StorageEntry,
+  TransportDomObservation,
+} from '../../types';
 import {
   allHeaderValues,
   finding,
@@ -13,9 +20,16 @@ import {
 } from './shared';
 import { isSensitiveCookieName } from './classification';
 import { collectSetCookieObservations } from './setCookie';
+import { assessCsp } from './csp';
 import { evaluatePrimaryHeaders } from './headers';
 import { assessCookiesForUrl } from './cookies';
 import { assessBrowserTokens } from './tokens';
+import {
+  assessMixedContent,
+  assessSubresourceIntegrity,
+  assessThirdParties,
+  assessWebSockets,
+} from './pageResources';
 
 export function assessHeaders(activeUrl: string, requests: CachedRequest[]): AssessmentFinding[] {
   const findings: AssessmentFinding[] = [];
@@ -31,6 +45,8 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
       'Reload or navigate the page so the extension can capture the document response and recent network requests.',
     )];
   }
+
+  findings.push(...assessCsp(primaryRequest));
 
   const { missing, warning } = evaluatePrimaryHeaders(primaryRequest);
   if (missing.length > 0) {
@@ -280,11 +296,19 @@ export function buildAssessmentFindings(params: {
   cookies: chrome.cookies.Cookie[];
   storageEntries: StorageEntry[];
   requests: CachedRequest[];
+  // Optional M5 inputs — absent inputs simply yield no additional findings.
+  pageResources?: PageResourceObservation | null;
+  domObservation?: TransportDomObservation | null;
+  webSockets?: ObservedWebSocket[];
 }): AssessmentFinding[] {
   const findings = [
     ...assessCookiesForUrl(params.cookies, params.activeUrl),
     ...assessBrowserTokens(params.cookies, params.storageEntries),
     ...assessHeaders(params.activeUrl, params.requests),
+    ...assessSubresourceIntegrity(params.pageResources ?? null),
+    ...assessMixedContent(params.activeUrl, params.requests, params.pageResources ?? null, params.domObservation ?? null),
+    ...assessWebSockets(params.activeUrl, params.webSockets ?? []),
+    ...assessThirdParties(params.activeUrl, params.requests, params.cookies),
   ];
 
   const unique = new Map<string, AssessmentFinding>();

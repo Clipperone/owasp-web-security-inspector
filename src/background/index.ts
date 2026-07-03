@@ -37,6 +37,8 @@ import type {
   HeaderModification,
   HeaderRuleDraft,
   HeaderRule,
+  ObservedWebSocket,
+  PageResourceObservation,
   StorageScanResult,
   TransportDomObservation,
 } from '../types';
@@ -260,6 +262,40 @@ chrome.webRequest.onHeadersReceived.addListener(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// WebSocket observation  (webRequest.onBeforeRequest per tab)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// onHeadersReceived does not reliably fire for WebSocket handshakes, so the
+// observable signal is onBeforeRequest with type 'websocket'. Only the handshake
+// URL is visible (no frames/payloads); connections opened before this listener
+// was registered are missed until a reload.
+
+const TAB_WEBSOCKETS_MAX = 20;
+
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (details.tabId < 0 || details.type !== 'websocket') return;
+    void (async () => {
+      try {
+        const key = `tabWebSockets:${details.tabId}`;
+        const stored = await chrome.storage.session.get(key);
+        const prev = (stored[key] as ObservedWebSocket[] | undefined) ?? [];
+        const entry: ObservedWebSocket = {
+          url: details.url,
+          secure: details.url.startsWith('wss://'),
+          timestamp: Date.now(),
+        };
+        const updated = [entry, ...prev.filter(ws => ws.url !== entry.url)].slice(0, TAB_WEBSOCKETS_MAX);
+        await chrome.storage.session.set({ [key]: updated });
+      } catch { /* silent */ }
+    })();
+
+    return undefined;
+  },
+  { urls: ['<all_urls>'], types: ['websocket'] },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Message router
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -413,6 +449,14 @@ async function handleMessage(
         return { success: true, data: null };
       }
 
+      case 'PAGE_RESOURCE_SCAN_RESULT': {
+        const result = message.payload as PageResourceObservation;
+        const tabId = sender.tab?.id ?? await getFallbackTabId();
+        const cacheKey = `pageResources:${tabId}`;
+        await chrome.storage.session.set({ [cacheKey]: result });
+        return { success: true, data: null };
+      }
+
       case 'GET_STORAGE_TOKENS': {
         const [tab]    = await chrome.tabs.query({ active: true, currentWindow: true });
         const tabId    = tab?.id ?? -1;
@@ -428,6 +472,15 @@ async function handleMessage(
         const cacheKey = `transportScan:${tabId}`;
         const stored = await chrome.storage.session.get(cacheKey);
         const result = (stored[cacheKey] as TransportDomObservation | undefined) ?? null;
+        return { success: true, data: result };
+      }
+
+      case 'GET_PAGE_RESOURCES': {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tabId = tab?.id ?? -1;
+        const cacheKey = `pageResources:${tabId}`;
+        const stored = await chrome.storage.session.get(cacheKey);
+        const result = (stored[cacheKey] as PageResourceObservation | undefined) ?? null;
         return { success: true, data: result };
       }
 
@@ -461,6 +514,23 @@ async function handleMessage(
           return {
             success: false,
             error: 'Transport scan is not available on this tab.',
+          };
+        }
+      }
+
+      case 'RUN_PAGE_RESOURCE_SCAN': {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id === undefined) {
+          return { success: false, error: 'No active tab available for page resource scan.' };
+        }
+
+        try {
+          const response = await chrome.tabs.sendMessage(tab.id, { type: 'RUN_PAGE_RESOURCE_SCAN' });
+          return response as ExtensionResponse;
+        } catch {
+          return {
+            success: false,
+            error: 'Page resource scan is not available on this tab.',
           };
         }
       }
@@ -507,6 +577,14 @@ async function handleMessage(
         const key    = `tabHeaders:${id}`;
         const stored = await chrome.storage.session.get(key);
         const data   = (stored[key] as CachedRequest[] | undefined) ?? [];
+        return { success: true, data };
+      }
+
+      case 'GET_TAB_WEBSOCKETS': {
+        const id     = message.payload as number;
+        const key    = `tabWebSockets:${id}`;
+        const stored = await chrome.storage.session.get(key);
+        const data   = (stored[key] as ObservedWebSocket[] | undefined) ?? [];
         return { success: true, data };
       }
 

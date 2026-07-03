@@ -495,7 +495,6 @@ export function getOwaspHeaderAssessment(activeUrl: string, requests: CachedRequ
 export function evaluatePrimaryHeaders(req: CachedRequest): HeaderCheckResult {
   const missing: string[] = [];
   const warning: string[] = [];
-  const csp = firstHeaderValue(req, 'content-security-policy');
   const hsts = firstHeaderValue(req, 'strict-transport-security');
   const xfo = firstHeaderValue(req, 'x-frame-options');
   const xcto = firstHeaderValue(req, 'x-content-type-options');
@@ -505,14 +504,9 @@ export function evaluatePrimaryHeaders(req: CachedRequest): HeaderCheckResult {
   const coep = firstHeaderValue(req, 'cross-origin-embedder-policy');
   const corp = firstHeaderValue(req, 'cross-origin-resource-policy');
 
-  if (!csp) {
-    missing.push('Content-Security-Policy');
-  } else {
-    const normalized = csp.toLowerCase();
-    if (normalized.includes("'unsafe-inline'") || normalized.includes("'unsafe-eval'")) {
-      warning.push('Content-Security-Policy allows unsafe-inline or unsafe-eval.');
-    }
-  }
+  // Content-Security-Policy is evaluated in depth by the dedicated per-directive
+  // analyzer in csp.ts, so it is intentionally not re-checked here to avoid
+  // emitting generic findings that would duplicate or contradict it.
 
   if (req.url.startsWith('https://')) {
     if (!hsts) {

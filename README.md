@@ -45,12 +45,15 @@ It does not verify, for example:
 - `Assessment > Transport & TLS` provides a passive browser-side review of HTTPS adoption, sensitive flow exposure, HSTS posture, downgrade signals, and transport evidence quality for the current session.
 - The Transport & TLS module uses only browser-observed requests, response headers, storage hints, and current-document DOM metadata such as HTTP form actions or absolute HTTP links. It does not probe endpoints, force requests, or simulate attacks.
 - `Assessment > Headers` validates the active page response against the OWASP Secure Headers project and the public validator test suite semantics.
+- Deep per-directive **Content-Security-Policy** analysis surfaces dedicated findings for `unsafe-inline`/`unsafe-eval`, wildcard and insecure-scheme script sources, missing `object-src`/`base-uri`/`frame-ancestors`/`default-src`, and recognizes Trusted Types, violation reporting, nonce/hash mitigation, and report-only mode (aligned with the OWASP CSP Cheat Sheet).
 - The Headers view is grouped into collapsible `Required`, `Advisory`, and `Should Be Absent` sections, each with per-section `Fail`, `Warn`, and `Pass` counters.
 - Missing required headers are reported as `Fail`, while required headers that are present but use a value different from the OWASP recommendation are reported as `Warn`.
 - `Advisory` checks for disclosure headers such as `Server` and `X-Powered-By` escalate to `Fail` when the observed value exposes an explicit version number, and remain `Warn` when they disclose only the product name.
 - Exact header values are still checked where the OWASP validator expects exact matches, while `Clear-Site-Data` remains conditional on observing a logout-like response in the captured traffic.
 - `Assessment > Cookies`, `Assessment > Tokens`, and `Assessment > Storage` surface the cookie, JWT/opaque-token, and web-storage findings produced by the same engine, each in its own subtab.
-- `Copy MD` and `Copy JSON` export a single report covering every assessment category (headers, transport, cookies, tokens, storage).
+- **Local JWT signature verification** — the Tokens tab includes an opt-in "Verify signature" panel that runs entirely in the browser via the Web Crypto API. Paste an HMAC secret, an SPKI PEM public key, a JWK, or a JWKS; it supports HS/RS/PS/ES algorithms, chooses the algorithm explicitly to prevent algorithm-confusion attacks, always rejects `alg: none`, and clearly separates "decoded" from "signature verified". No key material ever leaves the browser.
+- The exported report is emitted with a stable `schemaVersion` for CI/issue-template reuse, and can be scoped by severity (All / High + Medium / High only) in Markdown or JSON.
+- Additional browser-observable controls under `Assessment > Transport`: **Subresource Integrity** (cross-origin `<script>`/`<link>` without `integrity`), **active/passive mixed content** and sensitive forms submitting over HTTP, insecure **`ws://` WebSockets** on HTTPS pages, and a best-effort **third-party origin/cookie inventory** (informational, using an eTLD+1 heuristic).
 
 ### Cookies
 

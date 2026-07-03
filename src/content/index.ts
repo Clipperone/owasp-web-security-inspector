@@ -23,6 +23,8 @@
 import type {
   ExtensionMessage,
   ExtensionResponse,
+  ObservedPageResource,
+  PageResourceObservation,
   StorageEntry,
   StorageScanResult,
   TransportDomObservation,
@@ -90,6 +92,11 @@ const SENSITIVE_FIELD_PATTERNS: string[] = [
 
 const MAX_OBSERVED_HTTP_LINKS = 20;
 const MAX_OBSERVED_FORMS = 12;
+const MAX_OBSERVED_SCRIPTS = 40;
+const MAX_OBSERVED_STYLESHEETS = 40;
+
+/** One or more space-separated `sha(256|384|512)-<base64>` hashes. Format only. */
+const SRI_INTEGRITY_RE = /^(sha(256|384|512)-[A-Za-z0-9+/=]+\s*)+$/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core scanning logic
@@ -260,6 +267,60 @@ function performTransportObservation(): TransportDomObservation {
   };
 }
 
+function observeResource(element: Element, kind: ObservedPageResource['kind'], urlAttr: string): ObservedPageResource | null {
+  const rawUrl = element.getAttribute(urlAttr);
+  if (!rawUrl || rawUrl.trim().length === 0) return null;
+
+  const url = resolveUrl(rawUrl);
+  let crossOrigin = false;
+  try {
+    crossOrigin = new URL(url).origin !== window.location.origin;
+  } catch {
+    crossOrigin = false;
+  }
+
+  const integrity = element.getAttribute('integrity')?.trim() ?? '';
+  const hasIntegrity = integrity.length > 0;
+  const crossOriginAttr = element.getAttribute('crossorigin');
+
+  return {
+    url,
+    kind,
+    crossOrigin,
+    crossOriginAttr: crossOriginAttr ?? undefined,
+    hasIntegrity,
+    integrityValid: hasIntegrity ? SRI_INTEGRITY_RE.test(integrity) : undefined,
+  };
+}
+
+/**
+ * Scans the current document for `<script src>` and `<link rel=stylesheet>`
+ * subresources so the assessment can check Subresource Integrity coverage.
+ * Only same-document, at-scan-time DOM is visible; dynamically injected or
+ * late-loaded resources may be missed until a re-scan.
+ */
+function performPageResourceObservation(): PageResourceObservation {
+  const scriptElements = Array.from(document.querySelectorAll('script[src]'));
+  const linkElements = Array.from(document.querySelectorAll('link[rel~="stylesheet"][href]'));
+
+  const scripts = scriptElements
+    .slice(0, MAX_OBSERVED_SCRIPTS)
+    .map(element => observeResource(element, 'script', 'src'))
+    .filter((resource): resource is ObservedPageResource => resource !== null);
+  const stylesheets = linkElements
+    .slice(0, MAX_OBSERVED_STYLESHEETS)
+    .map(element => observeResource(element, 'stylesheet', 'href'))
+    .filter((resource): resource is ObservedPageResource => resource !== null);
+
+  return {
+    pageUrl: window.location.href,
+    scannedAt: new Date().toISOString(),
+    scripts,
+    stylesheets,
+    truncated: scriptElements.length > MAX_OBSERVED_SCRIPTS || linkElements.length > MAX_OBSERVED_STYLESHEETS,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry point — schedule scan during browser idle time
 // ─────────────────────────────────────────────────────────────────────────────
@@ -305,47 +366,64 @@ async function runTransportScan(): Promise<TransportDomObservation | null> {
   }
 }
 
+async function runPageResourceScan(): Promise<PageResourceObservation | null> {
+  try {
+    const result = performPageResourceObservation();
+
+    await chrome.runtime.sendMessage({
+      type: 'PAGE_RESOURCE_SCAN_RESULT',
+      payload: result,
+    });
+
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 chrome.runtime.onMessage.addListener(
   (
     message: ExtensionMessage,
     _sender,
     sendResponse: (response: ExtensionResponse<{ entries: number }>) => void,
   ) => {
-    if (message.type !== 'RUN_STORAGE_SCAN') {
-      if (message.type !== 'RUN_TRANSPORT_SCAN') {
+    switch (message.type) {
+      case 'RUN_STORAGE_SCAN':
+        void (async () => {
+          const result = await runScan();
+          if (result) {
+            sendResponse({ success: true, data: { entries: result.entries.length } });
+            return;
+          }
+          sendResponse({ success: false, error: 'Storage scan failed.' });
+        })();
+        return true;
+
+      case 'RUN_TRANSPORT_SCAN':
+        void (async () => {
+          const result = await runTransportScan();
+          if (result) {
+            sendResponse({ success: true, data: { entries: result.forms.length + result.absoluteHttpLinks.length } });
+            return;
+          }
+          sendResponse({ success: false, error: 'Transport scan failed.' });
+        })();
+        return true;
+
+      case 'RUN_PAGE_RESOURCE_SCAN':
+        void (async () => {
+          const result = await runPageResourceScan();
+          if (result) {
+            sendResponse({ success: true, data: { entries: result.scripts.length + result.stylesheets.length } });
+            return;
+          }
+          sendResponse({ success: false, error: 'Page resource scan failed.' });
+        })();
+        return true;
+
+      default:
         return false;
-      }
-
-      void (async () => {
-        const result = await runTransportScan();
-        if (result) {
-          sendResponse({
-            success: true,
-            data: { entries: result.forms.length + result.absoluteHttpLinks.length },
-          });
-          return;
-        }
-
-        sendResponse({ success: false, error: 'Transport scan failed.' });
-      })();
-
-      return true;
     }
-
-    void (async () => {
-      const result = await runScan();
-      if (result) {
-        sendResponse({
-          success: true,
-          data: { entries: result.entries.length },
-        });
-        return;
-      }
-
-      sendResponse({ success: false, error: 'Storage scan failed.' });
-    })();
-
-    return true;
   },
 );
 
@@ -358,10 +436,12 @@ if (typeof requestIdleCallback === 'function') {
   requestIdleCallback(() => {
     void runScan();
     void runTransportScan();
+    void runPageResourceScan();
   }, { timeout: 3000 });
 } else {
   setTimeout(() => {
     void runScan();
     void runTransportScan();
+    void runPageResourceScan();
   }, 200);
 }

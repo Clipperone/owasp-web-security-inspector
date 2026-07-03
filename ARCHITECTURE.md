@@ -26,6 +26,7 @@ src/
     transportTls/        Passive transport & TLS assessment
     report.ts            Unified Markdown/JSON report across all categories
     jwtUtils.ts          Local JWT decode/validation (no external library)
+    jwtVerify.ts         Local JWT signature verification via Web Crypto
     cookieUtils.ts       Cookie URL/id helpers
     headerUtils.ts       Header-rule validation helpers
     exporter.ts          Cookie export (curl, Netscape cookies.txt)
@@ -61,6 +62,10 @@ public API is unchanged whichever module a function lives in:
 - `classification.ts` — cookie/token sensitivity classification
 - `setCookie.ts` — `Set-Cookie` parsing and response-side analysis
 - `headers.ts` — OWASP Secure Headers validator checks (`getOwaspHeaderAssessment`)
+- `csp.ts` — per-directive Content-Security-Policy analysis (`assessCsp`)
+- `pageResources.ts` — SRI, mixed content, insecure forms, `ws://`, and
+  third-party inventory (`assessSubresourceIntegrity`, `assessMixedContent`,
+  `assessWebSockets`, `assessThirdParties`); `site.ts` provides the eTLD+1 heuristic
 - `cookies.ts` — cookie-jar findings and summaries
 - `tokens.ts` — JWT/opaque token risk findings and summaries
 - `findings.ts` — `assessHeaders` (CORS/cache/disclosure), `buildAssessmentFindings`
@@ -73,7 +78,15 @@ nothing is computed in React components.
 
 `report.ts` assembles the header report, transport report, and findings into a
 single `FullAssessmentReport` and serializes it to Markdown or JSON, so exports
-stay consistent with what the UI shows.
+stay consistent with what the UI shows. The report carries a stable
+`schemaVersion` (`REPORT_SCHEMA_VERSION`) for CI consumers, and `filterFindings`
+/`filterReport` scope the exported findings by severity/category (also the seam a
+future snapshot diff will reuse).
+
+`jwtVerify.ts` verifies JWT signatures locally with the Web Crypto API
+(`crypto.subtle`). It takes the algorithm from an explicit caller choice (never
+the token header) to defeat algorithm-confusion, always rejects `alg: none`, and
+accepts a shared secret, SPKI PEM key, JWK, or pasted JWKS — no network calls.
 
 ## UI design system (`src/sidepanel/ui/`)
 

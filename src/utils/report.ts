@@ -20,7 +20,15 @@ import type {
 } from '../types';
 import { getFindingCounts } from './assessment';
 
+/**
+ * Version of the exported report shape, so CI consumers and issue templates can
+ * pin against a stable contract. Bump the minor for additive changes and the
+ * major for any rename/removal/type change of an existing field.
+ */
+export const REPORT_SCHEMA_VERSION = '1.0' as const;
+
 export interface FullAssessmentReport {
+  schemaVersion: typeof REPORT_SCHEMA_VERSION;
   generatedAt: string;
   activeUrl: string;
   headers: HeaderAssessmentReport;
@@ -38,6 +46,7 @@ export function buildFullAssessmentReport(params: {
   findings: AssessmentFinding[];
 }): FullAssessmentReport {
   return {
+    schemaVersion: REPORT_SCHEMA_VERSION,
     generatedAt: params.generatedAt,
     activeUrl: params.activeUrl,
     headers: params.headers,
@@ -45,6 +54,38 @@ export function buildFullAssessmentReport(params: {
     findings: params.findings,
     severityCounts: getFindingCounts(params.findings),
   };
+}
+
+/** Minimum severity to include when exporting. `medium` means High + Medium. */
+export type MinSeverity = 'all' | 'high' | 'medium';
+
+export interface ReportFilter {
+  minSeverity?: MinSeverity;
+  categories?: AssessmentCategory[];
+}
+
+const SEVERITY_RANK: Record<AssessmentSeverity, number> = { high: 3, medium: 2, low: 1, info: 0 };
+const MIN_SEVERITY_RANK: Record<MinSeverity, number> = { all: 0, medium: 2, high: 3 };
+
+/** Filter findings by minimum severity and/or category. */
+export function filterFindings(findings: AssessmentFinding[], filter?: ReportFilter): AssessmentFinding[] {
+  const minRank = MIN_SEVERITY_RANK[filter?.minSeverity ?? 'all'];
+  const categories = filter?.categories;
+  return findings.filter(finding =>
+    SEVERITY_RANK[finding.severity] >= minRank
+    && (categories === undefined || categories.includes(finding.category)),
+  );
+}
+
+/**
+ * Return a copy of the report with its findings filtered and `severityCounts`
+ * recomputed. The header and transport check sections are left intact (they are
+ * pass/fail/warn checks, not severity-typed findings). This is also the seam a
+ * future snapshot diff (M3) reuses to scope both sides before comparing.
+ */
+export function filterReport(report: FullAssessmentReport, filter?: ReportFilter): FullAssessmentReport {
+  const findings = filterFindings(report.findings, filter);
+  return { ...report, findings, severityCounts: getFindingCounts(findings) };
 }
 
 const HEADER_STATUS_LABEL: Record<HeaderAssessmentStatus, string> = {
@@ -96,7 +137,7 @@ const FINDING_CATEGORY_LABEL: Record<AssessmentCategory, string> = {
   transport: 'Transport',
 };
 
-const FINDING_CATEGORY_ORDER: AssessmentCategory[] = ['cookies', 'tokens', 'storage', 'headers'];
+const FINDING_CATEGORY_ORDER: AssessmentCategory[] = ['cookies', 'tokens', 'storage', 'headers', 'transport'];
 
 /** Render the full report as a reviewer-friendly Markdown document. */
 export function renderReportMarkdown(report: FullAssessmentReport): string {
@@ -183,7 +224,8 @@ export function renderReportMarkdown(report: FullAssessmentReport): string {
 
   lines.push('## Limitations');
   lines.push('');
-  lines.push('This assessment is browser-side only. It reviews what the browser can observe — cookies, web storage, response headers, and transport signals — and does not verify backend session invalidation, JWT signature trust, secret strength, server-side session rotation, or formal OWASP ASVS compliance.');
+  lines.push('This assessment is browser-side only. It reviews what the browser can observe — cookies, web storage, response headers, and transport signals — and does not verify backend session invalidation, secret strength, server-side session rotation, or formal OWASP ASVS compliance. JWT signatures can be verified on demand in the Tokens tab but are not part of this report.');
+  lines.push('Subresource Integrity is checked against the document DOM captured at scan time (dynamically injected resources may be missed), WebSockets opened before the extension started observing are not seen, and the third-party inventory uses an approximate eTLD+1 heuristic rather than a full public-suffix list.');
   lines.push('');
 
   return lines.join('\n');

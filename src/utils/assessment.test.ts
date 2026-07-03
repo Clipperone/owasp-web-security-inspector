@@ -3,6 +3,7 @@ import type { CachedRequest, StorageEntry } from '../types';
 import {
   assessBrowserTokens,
   assessCookiesForUrl,
+  assessCsp,
   assessHeaders,
   buildAssessmentFindings,
   getFindingCounts,
@@ -292,5 +293,110 @@ describe('assessment utilities', () => {
     const clearSiteDataCheck = report.checks.find(check => check.headerName === 'Clear-Site-Data');
 
     expect(clearSiteDataCheck?.status).toBe('warn');
+  });
+});
+
+describe('CSP per-directive analysis', () => {
+  function cspRequest(value: string, headerName = 'Content-Security-Policy'): CachedRequest {
+    return createRequest({ responseHeaders: [{ name: headerName, value }] });
+  }
+
+  const SAFE_TAIL = "object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+
+  test("flags script-src 'unsafe-inline' without a nonce as high", () => {
+    const findings = assessCsp(cspRequest(`default-src 'self'; script-src 'self' 'unsafe-inline'; ${SAFE_TAIL}`));
+    const inline = findings.find(f => f.id.startsWith('csp-script-unsafe-inline-') && !f.id.includes('mitigated'));
+    const mitigated = findings.find(f => f.id.includes('unsafe-inline-mitigated'));
+
+    expect(inline?.severity).toBe('high');
+    expect(mitigated).toBeUndefined();
+  });
+
+  test("downgrades 'unsafe-inline' to a mitigated low when a nonce is present", () => {
+    const findings = assessCsp(cspRequest(`default-src 'self'; script-src 'self' 'nonce-abc123' 'unsafe-inline'; ${SAFE_TAIL}`));
+    const mitigated = findings.find(f => f.id.includes('unsafe-inline-mitigated'));
+    const plainInline = findings.find(f => f.id.startsWith('csp-script-unsafe-inline-') && !f.id.includes('mitigated'));
+
+    expect(mitigated?.severity).toBe('low');
+    expect(plainInline).toBeUndefined();
+  });
+
+  test("flags 'unsafe-eval' as high", () => {
+    const titles = assessCsp(cspRequest(`default-src 'self'; script-src 'self' 'unsafe-eval'; ${SAFE_TAIL}`)).map(f => f.title);
+    expect(titles).toContain("CSP script-src allows 'unsafe-eval'");
+  });
+
+  test('flags a wildcard script source as high', () => {
+    const wildcard = assessCsp(cspRequest(`default-src 'self'; script-src *; ${SAFE_TAIL}`))
+      .find(f => f.id.startsWith('csp-script-wildcard-'));
+    expect(wildcard?.severity).toBe('high');
+  });
+
+  test('flags insecure/broad schemes in script-src as high', () => {
+    const scheme = assessCsp(cspRequest(`default-src 'self'; script-src 'self' http: data:; ${SAFE_TAIL}`))
+      .find(f => f.id.startsWith('csp-script-insecure-scheme-'));
+    expect(scheme?.severity).toBe('high');
+  });
+
+  test('reports missing defensive directives when only default-src is present', () => {
+    const titles = assessCsp(cspRequest("default-src 'self'")).map(f => f.title);
+    expect(titles).toContain("CSP object-src is not 'none'");
+    expect(titles).toContain('CSP base-uri directive is missing');
+    expect(titles).toContain('CSP frame-ancestors directive is missing');
+    expect(titles).not.toContain('CSP does not define default-src');
+  });
+
+  test('raises no medium or high findings for a hardened policy', () => {
+    const findings = assessCsp(cspRequest(`default-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; script-src 'self'`));
+    expect(findings.filter(f => f.severity === 'high' || f.severity === 'medium')).toHaveLength(0);
+  });
+
+  test('recognizes Trusted Types and reporting as positive info findings', () => {
+    const titles = assessCsp(cspRequest(
+      `default-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; script-src 'self'; require-trusted-types-for 'script'; report-uri /csp-report`,
+    )).map(f => f.title);
+    expect(titles).toContain('CSP enforces Trusted Types for scripts');
+    expect(titles).toContain('CSP configures violation reporting');
+  });
+
+  test('downgrades report-only findings and never raises csp-missing for them', () => {
+    const findings = assessCsp(cspRequest(`script-src 'self' 'unsafe-inline'`, 'Content-Security-Policy-Report-Only'));
+    const reportOnly = findings.find(f => f.id.startsWith('csp-report-only-'));
+    const inline = findings.find(f => f.id.startsWith('csp-script-unsafe-inline-') && f.id.endsWith('-ro'));
+
+    expect(reportOnly?.severity).toBe('info');
+    expect(inline?.severity).toBe('medium'); // high downgraded one level
+    expect(findings.some(f => f.id.startsWith('csp-missing-'))).toBe(false);
+  });
+
+  test('emits a single csp-missing finding when no CSP header is present', () => {
+    const findings = assessCsp(createRequest());
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id.startsWith('csp-missing-')).toBe(true);
+    expect(findings[0]?.severity).toBe('medium');
+  });
+
+  test('no longer lists Content-Security-Policy in the generic missing-headers finding', () => {
+    const missingFinding = assessHeaders('https://app.example.com/account', [createRequest()])
+      .find(f => f.title === 'Missing key browser security headers');
+    expect(missingFinding?.evidence).not.toContain('Content-Security-Policy');
+  });
+
+  test('parses directives case-insensitively', () => {
+    const inline = assessCsp(cspRequest(`SCRIPT-SRC   'UNSAFE-INLINE'`))
+      .find(f => f.id.startsWith('csp-script-unsafe-inline-') && !f.id.includes('mitigated'));
+    expect(inline?.severity).toBe('high');
+  });
+
+  test('analyzes multiple Content-Security-Policy headers independently', () => {
+    const request = createRequest({
+      responseHeaders: [
+        { name: 'Content-Security-Policy', value: `script-src 'unsafe-eval'` },
+        { name: 'Content-Security-Policy', value: `script-src 'unsafe-inline'` },
+      ],
+    });
+    const titles = assessCsp(request).map(f => f.title);
+    expect(titles).toContain("CSP script-src allows 'unsafe-eval'");
+    expect(titles).toContain("CSP script-src allows 'unsafe-inline'");
   });
 });

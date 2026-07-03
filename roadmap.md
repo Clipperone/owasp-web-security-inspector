@@ -53,17 +53,19 @@ Per ogni intervento:
   nel passaggio al modello a sottotab)
 - conteggi e ordinamento coerenti tra UI e report
 
-### M2 — Analisi CSP approfondita
+### M2 — Analisi CSP approfondita ✅ (implementato)
 
-Il check CSP attuale è superficiale (presenza di `unsafe`). Introdurre un
-analizzatore per direttiva:
+Sostituito il check superficiale (presenza di `unsafe`) con un analizzatore per
+direttiva in `src/utils/assessment/csp.ts` (`assessCsp`):
 
-- `unsafe-inline` / `unsafe-eval`, sorgenti wildcard, schemi pericolosi
-- assenza di `object-src`, `base-uri`, `frame-ancestors`
-- uso di nonce/hash, `require-trusted-types-for` (Trusted Types), `report-to`
-- finding dedicati con remediation precisa
+- `unsafe-inline` / `unsafe-eval`, sorgenti wildcard, schemi pericolosi (`http:`/`data:`/`blob:`)
+- assenza di `object-src`, `base-uri`, `frame-ancestors`, `default-src`
+- riconoscimento di nonce/hash e `strict-dynamic` (mitigazione), Trusted Types e reporting
+- declassamento delle policy `Report-Only`; finding dedicati con remediation precisa
 
 Riferimento: OWASP Content Security Policy Cheat Sheet.
+Limiti noti: CSP via `<meta>` non osservabile dagli header; policy multiple non
+intersecate (documentato nel modulo).
 
 ### M3 — Snapshot & Diff
 
@@ -76,21 +78,34 @@ Il vero salto di qualità per un reviewer.
    finding nuovi/risolti
 4. export del diff in Markdown
 
-### M4 — Reportistica avanzata e verifica JWT
+### M4 — Reportistica avanzata e verifica JWT ✅ (implementato, SARIF rimandato)
 
-- export filtrato (es. solo High/Medium) e export del diff
-- schema JSON stabile per riuso in CI / issue template; valutare output **SARIF**
-- **verifica firma JWT** con chiave o JWKS forniti dall'utente, eseguita
-  localmente via **Web Crypto** — mantiene il principio browser-side e distingue
-  in modo netto "decode" da "trust verification"
+- ✅ export filtrato per severità (All / High+Medium / High) in Markdown/JSON
+  (`filterFindings`/`filterReport`); export del diff resta legato a M3
+- ✅ schema JSON stabile e versionato (`schemaVersion` `1.0`, `REPORT_SCHEMA_VERSION`)
+  per riuso in CI / issue template
+- ⏸️ output **SARIF** — rimandato (M4.1); il seam `filterReport` è già riusabile
+- ✅ **verifica firma JWT** con secret/PEM/JWK/JWKS forniti dall'utente, eseguita
+  localmente via **Web Crypto** (`src/utils/jwtVerify.ts`) — solo offline (nessuna
+  chiamata di rete), algoritmo scelto esplicitamente (anti algorithm-confusion),
+  `alg: none` sempre rifiutato; distingue "decode" da "trust verification"
 
-### M5 — Controlli aggiuntivi osservabili dal browser
+### M5 — Controlli aggiuntivi osservabili dal browser ✅ (implementato)
 
-- **Subresource Integrity (SRI)**: `<script>`/`<link>` cross-origin senza
-  `integrity`
-- **inventario terze parti**: origini esterne contattate e cookie di terze parti
-- **mixed content**, form insicuri e connessioni `ws://` resi finding espliciti
-  (parte del segnale è già raccolto dal modulo Transport)
+Nuovi finding categoria `transport` in `src/utils/assessment/pageResources.ts`,
+sotto il tab Transport:
+
+- ✅ **Subresource Integrity (SRI)**: `<script>`/`<link>` cross-origin senza
+  `integrity` (scan DOM nel content script)
+- ✅ **inventario terze parti**: origini esterne e cookie di terze parti (info,
+  euristica eTLD+1 in `site.ts` senza public-suffix list)
+- ✅ **mixed content** attivo/passivo, form insicuri e WebSocket `ws://` resi
+  finding espliciti; il segnale di downgrade è calcolato una volta sola
+  (`computeDowngradeSignals`) e condiviso col pannello Transport
+- WebSocket osservati via `webRequest.onBeforeRequest` (nessun nuovo permesso)
+
+Limiti: SRI vede solo il DOM al momento dello scan; `integrityValid` è solo
+formale; i WebSocket aperti prima della registrazione del listener non sono visti.
 
 ### M6 — Configurabilità e maturità prodotto
 

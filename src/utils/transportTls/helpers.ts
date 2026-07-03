@@ -2,6 +2,7 @@ import type {
   CachedRequest,
   StorageScanResult,
   TransportDomObservation,
+  TransportObservedForm,
   TransportTlsCheck,
   TransportTlsConfidence,
   TransportTlsCoverage,
@@ -16,6 +17,47 @@ export interface TransportTlsInputs {
   requests: CachedRequest[];
   domObservation: TransportDomObservation | null;
   storageScan?: StorageScanResult | null;
+}
+
+/**
+ * Raw downgrade / mixed-content signals derived once from the observed session,
+ * so the Transport panel check and the promoted mixed-content findings stay in
+ * agreement (single source of truth).
+ */
+export interface DowngradeSignals {
+  pageIsHttps: boolean;
+  /** XHR/fetch requests to HTTP made from an HTTPS page. */
+  httpFetches: CachedRequest[];
+  /** Responses that redirect to an HTTP location. */
+  redirectsToHttp: CachedRequest[];
+  /** Absolute HTTP links seen in the document (from an HTTPS page). */
+  httpLinks: string[];
+  /** Forms whose action targets HTTP (from an HTTPS page). */
+  httpForms: TransportObservedForm[];
+  /** Whether any request or DOM evidence was available at all. */
+  hasEvidence: boolean;
+}
+
+export function computeDowngradeSignals(inputs: TransportTlsInputs): DowngradeSignals {
+  const pageIsHttps = isHttpsUrl(inputs.activeUrl);
+  const httpFetches = pageIsHttps
+    ? inputs.requests.filter(request => request.resourceType === 'xmlhttprequest' && isHttpUrl(request.url))
+    : [];
+  const redirectsToHttp = inputs.requests.filter(request => {
+    const location = getFirstHeaderValue(request, 'location');
+    return typeof location === 'string' && isHttpUrl(location);
+  });
+  const httpLinks = pageIsHttps ? (inputs.domObservation?.absoluteHttpLinks ?? []) : [];
+  const httpForms = pageIsHttps ? (inputs.domObservation?.forms ?? []).filter(form => isHttpUrl(form.action)) : [];
+
+  return {
+    pageIsHttps,
+    httpFetches,
+    redirectsToHttp,
+    httpLinks,
+    httpForms,
+    hasEvidence: inputs.requests.length > 0 || inputs.domObservation !== null,
+  };
 }
 
 const SENSITIVE_QUERY_NAME_RE = /(token|access|refresh|reset|session|auth|bearer|secret|api[_-]?key|code|password)/i;
