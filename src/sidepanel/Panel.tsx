@@ -1,23 +1,50 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AssessmentTab } from './AssessmentTab';
 import { CookieTab } from './CookieTab';
 import { CurrentHeadersTab } from './CurrentHeadersTab';
-import { HeadersTab } from './HeadersTab';
 import { TokensTab } from './TokensTab';
 
-type TabId = 'assessment' | 'cookies' | 'headers' | 'tokens' | 'response';
+type TabId = 'assessment' | 'cookies' | 'tokens' | 'response';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'assessment', label: 'Assessment'       },
   { id: 'cookies',  label: 'Cookies'          },
   { id: 'response', label: 'Response Headers' },
-  { id: 'headers',  label: 'Modify Headers'   },
   { id: 'tokens',   label: 'Tokens'           },
 ];
+
+const HOST_ACCESS: chrome.permissions.Permissions = { origins: ['<all_urls>'] };
 
 export const Panel: React.FC = () => {
   const [active, setActive]         = useState<TabId>('assessment');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
+  // Firefox treats host_permissions as optional at install, so the observers
+  // return nothing until the user grants access. On Chromium this is always
+  // granted, so the banner never appears. Undefined = not yet checked.
+  const [hasHostAccess, setHasHostAccess] = useState<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const granted = await chrome.permissions.contains(HOST_ACCESS);
+        if (!cancelled) setHasHostAccess(granted);
+      } catch {
+        // permissions API unavailable — assume access is manifest-granted.
+        if (!cancelled) setHasHostAccess(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const requestHostAccess = useCallback(async () => {
+    try {
+      const granted = await chrome.permissions.request(HOST_ACCESS);
+      if (granted) setHasHostAccess(true);
+    } catch {
+      // Ignore — the user can retry.
+    }
+  }, []);
 
   const sendToTokens = (value: string) => {
     setPendingToken(value);
@@ -47,6 +74,21 @@ export const Panel: React.FC = () => {
         </h1>
       </header>
 
+      {/* ── Host-access prompt (Firefox) ───────────────────────────────── */}
+      {hasHostAccess === false && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-950/40 border-b border-amber-800/50 shrink-0">
+          <span className="flex-1 text-[11px] text-amber-300">
+            Grant access to page data so the inspector can read headers, cookies, and storage.
+          </span>
+          <button
+            onClick={() => { void requestHostAccess(); }}
+            className="px-2 py-1 text-[11px] font-medium text-white bg-amber-700 hover:bg-amber-600 rounded transition-colors shrink-0"
+          >
+            Grant site access
+          </button>
+        </div>
+      )}
+
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
       <nav className="flex border-b border-gray-800 bg-gray-900/40 shrink-0 overflow-x-auto">
         {TABS.map(tab => (
@@ -69,7 +111,6 @@ export const Panel: React.FC = () => {
       <main className="flex-1 overflow-hidden">
         {active === 'assessment' && <AssessmentTab />}
         {active === 'cookies'  && <CookieTab onSendToTokens={sendToTokens} />}
-        {active === 'headers'  && <HeadersTab />}
         {active === 'tokens'   && <TokensTab initialToken={pendingToken} onConsumeToken={() => setPendingToken(null)} />}
         {active === 'response' && <CurrentHeadersTab />}
       </main>

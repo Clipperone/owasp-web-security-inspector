@@ -11,7 +11,6 @@ export * from './jwtUtils';
 export * from './storageUtils';
 
 export * from './cookieUtils';
-export * from './headerUtils';
 
-// Cookie and header export utilities (cURL, Netscape cookies.txt)
+// Cookie export utilities (cURL, Netscape cookies.txt)
 export * from './exporter';

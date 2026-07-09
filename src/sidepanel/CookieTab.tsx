@@ -285,7 +285,7 @@ export const CookieTab: React.FC<{
     setExportOpen(false);
   };
 
-  const handleExportCurl     = () => void copyAndToast(exportToCurl(tabUrl, visible, []), 'Copied as cURL!');
+  const handleExportCurl     = () => void copyAndToast(exportToCurl(tabUrl, visible), 'Copied as cURL!');
   const handleExportNetscape = () => void copyAndToast(exportToNetscape(visible), 'Copied as cookies.txt!');
 
   // ── Render ────────────────────────────────────────────────────────────────────

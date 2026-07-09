@@ -1,125 +1,115 @@
 # Roadmap
 
-## Obiettivo
+## Goal
 
-Far evolvere l'estensione da strumento di ispezione/editing a strumento di
-**valutazione di sicurezza browser-side** orientato alle best practice OWASP per
-cookie e session management, token/JWT, security header e transport, restando
-sempre dentro ciò che il browser può osservare (nessun backend, nessuna chiamata
-esterna).
+Grow the extension as a **browser-side OWASP security assessment** tool with a
+**passive analysis engine**, aligned with best practices for cookies and session
+management, tokens/JWTs, storage secrets, security headers, and transport —
+always staying within what the browser can observe (no backend, no external
+calls). The assessment never mutates the inspected site; cookie editing in the
+Cookies tab is the one explicit, user-initiated exception.
 
-Direzioni di crescita residue: migliorare triage e leggibilità, colmare i gap di
-copertura/affidabilità, abilitare review comparative (snapshot/diff), completare
-la reportistica per CI e aprire la configurabilità — mantenendo il codice puro,
-testato e pubblicabile come progetto open source.
+Remaining growth directions: comparative review (snapshot/diff), CI reporting
+(SARIF), and configurability — while keeping the code pure, tested, and
+publishable as an open-source project across Chrome, Firefox, and Edge.
 
-## Stato attuale (v0.3.0)
+## Current state (v0.5.0)
 
-Già disponibile:
+Already available:
 
-- ispezione ed editing di cookie, token e header (regole `declarativeNetRequest`)
-- decode JWT locale e **verifica firma JWT** offline via Web Crypto — HS/RS/PS/ES
-  con secret/PEM/JWK/JWKS, algoritmo esplicito (anti algorithm-confusion),
-  `alg:none` sempre rifiutato (`src/utils/jwtVerify.ts`)
-- assessment OWASP Secure Headers con **analisi CSP per-direttiva**
-  (`src/utils/assessment/csp.ts`): `unsafe-inline`/`unsafe-eval`, sorgenti
-  wildcard e schemi insicuri, direttive difensive mancanti, nonce/hash e
-  `strict-dynamic`, Trusted Types, reporting, policy `Report-Only`
-- assessment Transport & TLS passivo, con controlli aggiuntivi
-  (`src/utils/assessment/pageResources.ts`): **Subresource Integrity**, **mixed
-  content** attivo/passivo, form insicuri, **`ws://`** su pagine HTTPS, e
-  **inventario terze parti** (origini e cookie, euristica eTLD+1)
-- Assessment unificato (sottotab Headers, Transport, Cookies, Tokens, Storage)
-- **report unico** Markdown/JSON con **schema versionato** (`schemaVersion` `1.0`)
-  ed **export filtrato per severità** (`src/utils/report.ts`)
-- UI nel Chrome side panel con design system condiviso (`src/sidepanel/ui`)
-- motore di assessment modularizzato in `src/utils/assessment/`
-- unit test con `vitest` (69), CI GitHub Actions, scaffolding OSS
+- **passive assessment engine**: it observes only and no longer modifies
+  request/response headers (the `declarativeNetRequest` editing feature and its
+  permissions were removed). Cookie editing (create/edit/delete/clear-all) stays
+  as an explicit, user-initiated tool in the Cookies tab
+- **cross-browser** builds for Chrome, Firefox, and Edge (MV3), with a Firefox
+  manifest transform (`scripts/postbuild-firefox.mjs`) and a tag-triggered
+  release pipeline that packages store artifacts
+- local JWT decode and **offline JWT signature verification** via Web Crypto —
+  HS/RS/PS/ES with secret/PEM/JWK/JWKS, explicit algorithm (anti
+  algorithm-confusion), `alg:none` always rejected (`src/utils/jwtVerify.ts`)
+- OWASP Secure Headers assessment with **per-directive CSP analysis**
+  (`src/utils/assessment/csp.ts`)
+- passive Transport & TLS assessment with additional observable controls
+  (`src/utils/assessment/pageResources.ts`): Subresource Integrity, mixed
+  content, insecure forms, `ws://` on HTTPS pages, third-party inventory
+- **storage secret & PII detection** (`src/utils/detection/`): private keys, API
+  keys, high-entropy secrets, embedded credentials/connection strings, and PII
+  (email, Luhn cards, phones, IBAN mod-97, Codice Fiscale, EU VAT) — ReDoS-safe
+  patterns with checksum validation, and **source-side redaction** so raw
+  secrets never leave the page
+- unified assessment (Headers, Transport, Cookies, Tokens, Storage subtabs) with
+  per-finding filters (severity, actionable-only, text search)
+- **self-contained HTML report** export (`src/utils/reportHtml.ts`): one offline
+  file, zero JavaScript, escaped output, meta CSP — replaces the previous
+  Markdown/JSON exports
+- unit tests with `vitest`, GitHub Actions CI, OSS scaffolding
 
-Per il dettaglio cronologico vedi `CHANGELOG.md` e la storia git.
+For the chronological detail see `CHANGELOG.md` and the git history.
 
-## Principi di esecuzione
+## Execution principles
 
-Per ogni intervento:
+For every change:
 
-1. implementare la modifica più piccola utile
-2. mantenere la logica di assessment in moduli puri, non nei componenti React
-3. validare con `npm run test`, `npm run lint`, `npm run eslint`, `npm run build`
-4. verificare manualmente nel side panel su almeno un sito reale
-5. aggiornare `README.md`, `ARCHITECTURE.md` e `CHANGELOG.md` se il comportamento
-   utente o la struttura cambiano
+1. implement the smallest useful change
+2. keep assessment/detection logic in pure modules, not in React components
+3. keep the assessment passive; cookie editing is the only user-initiated write
+4. validate with `npm run test`, `npm run lint`, `npm run eslint`, `npm run build:all`
+5. verify manually in the side panel on at least one real site
+6. update `README.md`, `ARCHITECTURE.md`, and `CHANGELOG.md` when user behaviour
+   or structure changes
 
-## Direzioni future (riordinate per priorità)
+## Future directions (by priority)
 
-Le milestone CSP approfondita, verifica JWT + reportistica avanzata e controlli
-osservabili aggiuntivi (SRI/mixed content/terze parti) sono state completate in
-**v0.3.0** e rimosse da questo elenco. I punti **1 e 2** qui sotto sono già
-implementati (in attesa di release); i punti 3–5 restano pianificati. L'ordine è
-rivisto in base al rapporto valore/sforzo e all'aumento del volume di finding.
+### 1. Snapshot & Diff
 
-### 1. Triage e leggibilità dei finding ✅ (implementato)
+The biggest quality jump for a reviewer, and the primary near-term goal.
 
-- ✅ barra di **postura sintetica** in cima all'Assessment (`High · Medium · Low · Info`)
-- ✅ **filtri** per severità minima e "solo azionabili" (`isActionableFinding`), più
-  **ricerca testuale** sui finding
-- ✅ conteggi coerenti tra UI e report: gli stessi filtri (`ReportFilter`) guidano sia
-  la vista sia l'export (Copy/Download)
+- manual snapshots of the observable context: cookies, storage (with detection
+  hits), captured headers, and findings — the `ContextSnapshot` type already
+  exists (`src/types/index.ts`) to keep current work forward-compatible
+- typical points: pre-login, post-login, post-logout
+- a pure `diff(a, b)` producing added / removed / changed per category, keyed on
+  cookie `name|domain|path`, storage `area|key`, and `finding.id`; the
+  `valueFingerprint` recorded on each storage entry detects secret rotation even
+  under redaction
+- stored in `chrome.storage.session` (memory-only) per origin, capped and
+  evicted oldest-first; explicit JSON download for cross-session keeping
+- UI as a 6th Assessment subtab plus a "Snapshot" toolbar button; the HTML
+  export gains a diff section
+- reuses the `filterReport` seam so both sides are scoped before comparison
+- finding IDs are already content-derived (no array indices) so diffs do not jitter
 
-### 2. Copertura e affidabilità dei finding ✅ (implementato)
+### 2. CI reporting: SARIF
 
-- ✅ **re-scan automatico** su navigazione / cambio tab (`chrome.tabs.onUpdated`/
-  `onActivated`, nessun permesso `webNavigation`)
-- ✅ scan **IndexedDB** oltre a `localStorage`/`sessionStorage` (Chrome 118+, fallback)
-- ✅ **download del report su file** (`owasp-assessment-<host>-<ts>.md/.json`, Blob,
-  nessun permesso `downloads`)
-- ✅ rifiniture: claim JWT **`nbf`** (not-before) e attributo cookie
-  **`Partitioned`/CHIPS**
+- **SARIF 2.1.0** output of findings for pipelines and code scanning; the
+  filtered renderer already exists (`filterReport`), so this is mapping severity
+  → `level` and `finding.id` → `ruleId` with a rule catalog
 
-### 3. Snapshot & Diff
+### 3. Configurability and product maturity
 
-Il vero salto di qualità per un reviewer.
+- an **Options** page: configurable thresholds (cookie/JWT lifetime, what counts
+  as "sensitive"), per-detector toggles, and per-origin finding
+  suppression/acknowledge (today `ExtensionSettings` exposes only
+  `autoDecodeTokens`)
+- internationalization (`chrome.i18n`)
+- keyboard navigation / ARIA accessibility for the side panel
 
-- snapshot manuali del contesto: cookies, storage, primary response, finding
-- punti tipici: pre-login, post-login, post-logout
-- vista **diff**: cookie/token/header/finding comparsi, spariti o cambiati
-- export del diff in Markdown (riusa il seam `filterReport` già presente)
+### Enhancements (backlog, non-blocking)
 
-### 4. Reportistica per CI: SARIF
-
-- output **SARIF 2.1.0** dei finding per pipeline e code scanning; il renderer
-  filtrato esiste già (`filterReport`), resta da mappare severità → `level` e
-  `finding.id` → `ruleId` con un catalogo di regole
-
-### 5. Configurabilità e maturità prodotto
-
-- pagina **Options**: soglie configurabili (lifetime cookie/JWT, cosa è
-  "sensibile"), toggle dei check, **soppressione/acknowledge** dei finding per
-  origine (oggi `ExtensionSettings` espone solo `autoDecodeTokens`)
-- internazionalizzazione (`chrome.i18n`)
-- tema chiaro (facilitato dalla centralizzazione in `src/sidepanel/ui/status.ts`)
-- storico per-tab degli assessment
-- accessibilità (navigazione da tastiera / ARIA) del side panel
-
-### Enhancement (backlog, non bloccanti)
-
-- CSP: estendere l'analisi a `form-action`, `frame-src`, `worker-src`,
+- CSP: extend analysis to `form-action`, `frame-src`, `worker-src`,
   `connect-src`, `upgrade-insecure-requests`
-- SRI su risorse iniettate dinamicamente (oggi solo DOM allo scan)
-- JWKS via **URL** per la verifica firma: deroga esplicita al principio "no rete",
-  quindi opt-in e off di default
+- SRI on dynamically injected resources (today only DOM at scan time)
+- key-aware entropy thresholds for the high-entropy detector
+- JWKS via **URL** for signature verification: an explicit exception to the
+  "no network" principle, so opt-in and off by default
 
-### Release
+## Out of scope (browser-side only)
 
-Chiudere le milestone in incrementi verificabili: validazione completa, test
-manuale su siti campione, `npm run release:patch|minor`, changelog aggiornato.
+Not to be introduced, because it requires TLS-layer access or network calls and
+would break the project's core principle:
 
-## Fuori scope (browser-side only)
-
-Da non reintrodurre, perché richiede accesso al layer TLS o chiamate di rete e
-romperebbe il principio del progetto:
-
-- verifica certificati, cipher suite e versioni di protocollo TLS
-- membership nella preload list HSTS, `security.txt`, OCSP/CT
-- revoca token o invalidazione sessione lato server
-- forza del secret JWT e qualità del key management
-- compliance formale completa (es. OWASP ASVS)
+- certificate, cipher-suite, and TLS protocol-version verification
+- HSTS preload-list membership, `security.txt`, OCSP/CT
+- server-side token revocation or session invalidation
+- JWT secret strength and key-management quality
+- full formal compliance (e.g. OWASP ASVS)

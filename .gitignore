@@ -1,8 +1,11 @@
 # Dependencies
 node_modules/
 
-# Vite build output (load unpacked from here in Chrome)
+# Vite build output (load unpacked: dist/chrome for Chrome/Edge, dist/firefox for Firefox)
 dist/
+
+# Packaged store artifacts (zips produced by scripts/package.mjs)
+artifacts/
 
 # Vite cache
 .vite/

@@ -21,6 +21,7 @@
  */
 
 import type {
+  DetectionHit,
   ExtensionMessage,
   ExtensionResponse,
   ObservedPageResource,
@@ -33,6 +34,7 @@ import type {
   WebStorageArea,
 } from '../types';
 import { isJwt } from '../utils/jwtUtils';
+import { runDetectors, fnv1a32 } from '../utils/detection';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -119,26 +121,62 @@ function scanStorageArea(storage: Storage, area: WebStorageArea): StorageEntry[]
     const rawValue = storage.getItem(key);
     if (rawValue === null || rawValue.length === 0) continue;
 
-    // Truncate oversized values — do this before any pattern matching so
-    // we always work on a bounded string.
-    const value = rawValue.length > MAX_VALUE_LENGTH
-      ? rawValue.slice(0, MAX_VALUE_LENGTH)
-      : rawValue;
-
-    const hints = collectHints(key, value);
-    if (hints.length === 0) continue;
-
-    entries.push({
-      area,
-      key,
-      value,
-      hints,
-      // Full JWT structural validation — more expensive, only run on candidates
-      isJwt: isJwt(value),
-    });
+    const entry = buildStorageEntry(area, key, rawValue);
+    if (entry) entries.push(entry);
   }
 
   return entries;
+}
+
+/**
+ * Builds a flagged `StorageEntry` from a raw key/value pair, or returns `null`
+ * when nothing of interest is found.
+ *
+ * The value is truncated to a bounded length, then run through both the token
+ * hint heuristics and the secret/PII detection engine. Detected secrets are
+ * redacted AT THE SOURCE so the raw value never leaves the page — except a
+ * whole-value JWT, which the Tokens tab must receive intact to decode. A
+ * fingerprint of the untruncated raw value is always recorded for stable change
+ * detection under redaction (used by the planned Snapshot Diff).
+ */
+function buildStorageEntry(area: WebStorageArea, key: string, rawValue: string): StorageEntry | null {
+  const valueLength = rawValue.length;
+  // Truncate oversized values before any matching so we work on a bounded string.
+  const truncated = rawValue.length > MAX_VALUE_LENGTH
+    ? rawValue.slice(0, MAX_VALUE_LENGTH)
+    : rawValue;
+
+  const hints = collectHints(key, truncated);
+  const entryIsJwt = isJwt(truncated);
+
+  let value = truncated;
+  let detections: DetectionHit[] | undefined;
+  let valueRedacted = false;
+
+  // A whole-value JWT is left intact for the Tokens tab; every other value is
+  // scanned for secrets/PII and redacted where any are found.
+  if (!entryIsJwt) {
+    const result = runDetectors(key, truncated);
+    if (result.hits.length > 0) {
+      detections = result.hits;
+      value = result.redactedValue;
+      valueRedacted = result.wasRedacted;
+    }
+  }
+
+  if (hints.length === 0 && !detections) return null;
+
+  return {
+    area,
+    key,
+    value,
+    hints,
+    isJwt: entryIsJwt,
+    ...(detections ? { detections } : {}),
+    ...(valueRedacted ? { valueRedacted: true } : {}),
+    valueLength,
+    valueFingerprint: fnv1a32(rawValue),
+  };
 }
 
 /**
@@ -255,10 +293,8 @@ async function scanIndexedDB(): Promise<StorageEntry[]> {
             collectRecordStrings(record, 0, strings);
             for (const raw of strings) {
               if (entries.length >= MAX_IDB_ENTRIES) break;
-              const value = raw.length > MAX_VALUE_LENGTH ? raw.slice(0, MAX_VALUE_LENGTH) : raw;
-              const hints = collectHints(entryKey, value);
-              if (hints.length === 0) continue;
-              entries.push({ area: 'indexedDB', key: entryKey, value, hints, isJwt: isJwt(value) });
+              const entry = buildStorageEntry('indexedDB', entryKey, raw);
+              if (entry) entries.push(entry);
             }
           }
         } catch {

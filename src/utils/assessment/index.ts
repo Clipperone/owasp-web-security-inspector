@@ -9,6 +9,7 @@ export {
   getTokenAssessmentSummary,
 } from './tokens';
 export { assessHeaders, buildAssessmentFindings, getFindingCounts, isActionableFinding } from './findings';
+export { assessStorageSecrets } from './storageSecrets';
 export {
   assessSubresourceIntegrity,
   assessMixedContent,

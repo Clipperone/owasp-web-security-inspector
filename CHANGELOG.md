@@ -4,6 +4,61 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-09
+
+The extension moves to a **passive assessment engine** and adds cross-browser
+support. Header/request/response rewriting is removed; the Cookies tab keeps its
+explicit, user-initiated editor.
+
+### Removed
+
+- **Header-rewriting engine.** Removed the "Modify Headers" tab and its
+  `declarativeNetRequest` rule engine (including the "Bearer Token" / "CORS
+  Bypass" templates). The `declarativeNetRequest`,
+  `declarativeNetRequestWithHostAccess` permissions and the
+  `declarative_net_request` manifest block are gone. An update migration removes
+  the legacy `headerRules` storage key.
+- **Markdown and JSON report exports**, replaced by a single HTML export.
+
+### Added
+
+- **Self-contained HTML report export.** One offline HTML file
+  (`owasp-assessment-<host>-<timestamp>.html`) generated entirely in the browser
+  — inline styling, **zero JavaScript**, a restrictive meta CSP, and every value
+  HTML-escaped via a secure-by-default tagged template (`src/utils/reportHtml.ts`).
+- **Storage secret & PII detection** (`src/utils/detection/`). A ReDoS-safe engine
+  detects private keys, provider API keys (AWS/GitHub/Google/Slack/Stripe/OpenAI),
+  high-entropy secrets, embedded credentials/connection strings, and PII (emails,
+  Luhn-valid cards, phones, IBAN mod-97, Codice Fiscale, EU VAT). Matches are
+  **redacted at the source** in the content script, so raw secrets never leave the
+  page (whole-value JWTs excepted, for the Tokens tab).
+- **Cross-browser builds** for Chrome, Firefox, and Edge (MV3). A Firefox manifest
+  transform (`scripts/postbuild-firefox.mjs`: `sidebar_action`,
+  `background.scripts`, `gecko` settings), `build:chrome`/`build:firefox`/
+  `build:all` scripts, zip packaging (`scripts/package.mjs`), and a tag-triggered
+  release workflow that attaches store artifacts to a GitHub Release.
+- **Snapshot Diff forward-compat types** (`ContextSnapshot`, `SnapshotMeta`) and
+  content-derived finding IDs, preparing the roadmap's snapshot/diff feature.
+
+### Unchanged
+
+- The **Cookies tab keeps its full editor** — create, edit, delete, and clear-all
+  cookies (with `SameSite=None`/`__Secure-`/`__Host-`/partitioned validation) plus
+  curl / Netscape export. Cookie editing is an explicit, user-initiated action and
+  sits outside the passive assessment engine.
+
+### Changed
+
+- Build output moved to `dist/chrome` (Chrome/Edge) and `dist/firefox`.
+- Finding IDs are now content-derived rather than array-index based, so they stay
+  stable across re-scans.
+
+### Security
+
+- The old Markdown export interpolated untrusted header/cookie values unescaped
+  (a Markdown-injection vector in permissive viewers); the escaped HTML export
+  closes it.
+
 ## [0.4.0] - 2026-07-04
 
 ### Added

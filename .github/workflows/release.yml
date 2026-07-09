@@ -1,0 +1,80 @@
+name: Release
+
+# Triggered by the tags that scripts/release.mjs creates (e.g. v0.5.0).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint
+
+      - name: Lint
+        run: npm run eslint
+
+      - name: Test
+        run: npm run test
+
+      - name: Verify tag matches manifest version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST="$(node -p "require('./manifest.json').version")"
+          echo "Tag version: $TAG · manifest version: $MANIFEST"
+          if [ "$TAG" != "$MANIFEST" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match manifest.json version $MANIFEST"
+            exit 1
+          fi
+
+      - name: Build all targets
+        run: npm run build:all
+
+      - name: Package store artifacts
+        run: npm run package
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+
+      # ── Store uploads (optional) ────────────────────────────────────────────
+      # Enable these once store API credentials are added as repository secrets.
+      #
+      # - name: Upload to Chrome Web Store
+      #   run: npx --yes chrome-webstore-upload-cli@3 upload \
+      #     --source artifacts/owasp-web-security-inspector-${{ github.ref_name }}-chrome.zip \
+      #     --extension-id "$CWS_EXTENSION_ID" --client-id "$CWS_CLIENT_ID" \
+      #     --client-secret "$CWS_CLIENT_SECRET" --refresh-token "$CWS_REFRESH_TOKEN"
+      #   env:
+      #     CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+      #     CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      #     CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      #     CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+      #
+      # - name: Sign & upload to Firefox Add-ons (AMO)
+      #   run: npx --yes web-ext sign --channel listed \
+      #     --source-dir dist/firefox \
+      #     --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+      #   env:
+      #     AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      #     AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      #
+      # - name: Upload to Microsoft Edge Add-ons
+      #   run: echo "Use the Edge Add-ons REST API with the edge artifact."

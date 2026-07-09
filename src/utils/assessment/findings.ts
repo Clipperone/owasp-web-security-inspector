@@ -19,6 +19,7 @@ import {
   parseClearSiteData,
 } from './shared';
 import { isSensitiveCookieName } from './classification';
+import { fnv1a32 } from '../detection';
 import { collectSetCookieObservations } from './setCookie';
 import { assessCsp } from './csp';
 import { evaluatePrimaryHeaders } from './headers';
@@ -30,6 +31,7 @@ import {
   assessThirdParties,
   assessWebSockets,
 } from './pageResources';
+import { assessStorageSecrets } from './storageSecrets';
 
 export function assessHeaders(activeUrl: string, requests: CachedRequest[]): AssessmentFinding[] {
   const findings: AssessmentFinding[] = [];
@@ -61,9 +63,9 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
     ));
   }
 
-  warning.forEach((message, index) => {
+  warning.forEach((message) => {
     findings.push(headerFinding(
-      `headers-warning-${index}-${hostnameFromUrl(primaryRequest.url)}`,
+      `headers-warning-${fnv1a32(message)}-${hostnameFromUrl(primaryRequest.url)}`,
       'medium',
       'Security header value differs from common OWASP guidance',
       'The response includes the header, but its value weakens or complicates the intended browser protection.',
@@ -130,11 +132,11 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
 
   const logoutRequests = requests.filter(request => hostnameFromUrl(request.url) === hostnameFromUrl(activeUrl) && looksLikeLogoutEndpoint(request.url));
   if (logoutRequests.length > 0) {
-    logoutRequests.forEach((request, index) => {
+    logoutRequests.forEach((request) => {
       const directives = parseClearSiteData(firstHeaderValue(request, 'clear-site-data'));
       if (directives.length === 0) {
         findings.push(headerFinding(
-          `headers-clear-site-data-missing-${index}-${hostnameFromUrl(request.url)}`,
+          `headers-clear-site-data-missing-${fnv1a32(request.url)}-${hostnameFromUrl(request.url)}`,
           'medium',
           'Logout-like response is missing Clear-Site-Data',
           'A captured logout or session-termination response did not request browser-side cleanup of cached state.',
@@ -144,7 +146,7 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
         ));
       } else if (!['cache', 'cookies', 'storage'].every(value => directives.includes(value) || directives.includes('*'))) {
         findings.push(headerFinding(
-          `headers-clear-site-data-weak-${index}-${hostnameFromUrl(request.url)}`,
+          `headers-clear-site-data-weak-${fnv1a32(request.url)}-${hostnameFromUrl(request.url)}`,
           'low',
           'Logout-like response uses partial Clear-Site-Data cleanup',
           'The response tries to clear browser state, but the directive set is narrower than a full session cleanup pattern.',
@@ -222,14 +224,17 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
     ));
   }
 
-  setCookieEntries.forEach(({ request, cookie: parsed }, index) => {
+  setCookieEntries.forEach(({ request, cookie: parsed }) => {
     if (!isSensitiveCookieName(parsed.name)) return;
 
     const requestDescriptor = `${request.resourceType} ${request.method} ${request.url}`;
+    // Content-derived discriminator: stable across re-scans (unlike an array
+    // index) so future Snapshot Diff comparisons don't jitter.
+    const reqKey = fnv1a32(request.url);
 
     if (!parsed.secure) {
       findings.push(finding(
-        `set-cookie-secure-${index}-${parsed.name}`,
+        `set-cookie-secure-${reqKey}-${parsed.name}`,
         'cookies',
         'high',
         'Set-Cookie for a sensitive cookie is missing Secure',
@@ -241,7 +246,7 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
 
     if (!parsed.httpOnly) {
       findings.push(finding(
-        `set-cookie-httponly-${index}-${parsed.name}`,
+        `set-cookie-httponly-${reqKey}-${parsed.name}`,
         'cookies',
         'high',
         'Set-Cookie for a sensitive cookie is missing HttpOnly',
@@ -253,7 +258,7 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
 
     if (parsed.sameSite === undefined) {
       findings.push(finding(
-        `set-cookie-samesite-${index}-${parsed.name}`,
+        `set-cookie-samesite-${reqKey}-${parsed.name}`,
         'cookies',
         'medium',
         'Set-Cookie for a sensitive cookie has no explicit SameSite',
@@ -265,7 +270,7 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
 
     if (parsed.sameSite === 'none' && !parsed.secure) {
       findings.push(finding(
-        `set-cookie-samesite-none-insecure-${index}-${parsed.name}`,
+        `set-cookie-samesite-none-insecure-${reqKey}-${parsed.name}`,
         'cookies',
         'high',
         'Set-Cookie uses SameSite=None without Secure',
@@ -277,7 +282,7 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
 
     if (parsed.sameSite === 'none' && !parsed.partitioned) {
       findings.push(finding(
-        `set-cookie-partitioned-${index}-${parsed.name}`,
+        `set-cookie-partitioned-${reqKey}-${parsed.name}`,
         'cookies',
         'low',
         'Set-Cookie with SameSite=None is not Partitioned',
@@ -289,7 +294,7 @@ export function assessHeaders(activeUrl: string, requests: CachedRequest[]): Ass
 
     if (parsed.path === '/' && request.resourceType === 'xmlhttprequest' && looksLikeAuthEndpoint(request.url)) {
       findings.push(finding(
-        `set-cookie-path-${index}-${parsed.name}`,
+        `set-cookie-path-${reqKey}-${parsed.name}`,
         'cookies',
         'low',
         'Set-Cookie delivered from an auth endpoint uses path=/',
@@ -316,6 +321,7 @@ export function buildAssessmentFindings(params: {
   const findings = [
     ...assessCookiesForUrl(params.cookies, params.activeUrl),
     ...assessBrowserTokens(params.cookies, params.storageEntries),
+    ...assessStorageSecrets(params.storageEntries),
     ...assessHeaders(params.activeUrl, params.requests),
     ...assessSubresourceIntegrity(params.pageResources ?? null),
     ...assessMixedContent(params.activeUrl, params.requests, params.pageResources ?? null, params.domObservation ?? null),

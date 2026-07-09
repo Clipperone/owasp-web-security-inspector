@@ -11,9 +11,10 @@ import type {
   StorageScanResult,
   TransportDomObservation,
 } from '../types';
-import { buildAssessmentFindings, getFindingCounts, getOwaspHeaderAssessment } from '../utils/assessment';
+import { buildAssessmentFindings, getOwaspHeaderAssessment } from '../utils/assessment';
 import { buildTransportTlsSection } from '../utils/transportTls';
-import { buildFullAssessmentReport, filterFindings, filterReport, renderReportJson, renderReportMarkdown } from '../utils/report';
+import { buildFullAssessmentReport, filterFindings, filterReport } from '../utils/report';
+import { renderReportHtml } from '../utils/reportHtml';
 import type { MinSeverity, ReportFilter } from '../utils/report';
 import { buildReportFilename, downloadTextFile } from '../utils/exporter';
 import { TransportTlsPanel } from './TransportTlsPanel';
@@ -148,7 +149,6 @@ export const AssessmentTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
-  const [exportFormat, setExportFormat] = useState<'markdown' | 'json'>('markdown');
   const [minSeverity, setMinSeverity] = useState<MinSeverity>('all');
   const [onlyActionable, setOnlyActionable] = useState(false);
   const [search, setSearch] = useState('');
@@ -256,8 +256,6 @@ export const AssessmentTab: React.FC = () => {
     [minSeverity, onlyActionable, search],
   );
   const filteredFindings = useMemo(() => filterFindings(findings, activeFilter), [findings, activeFilter]);
-  const postureCounts = useMemo(() => getFindingCounts(filteredFindings), [filteredFindings]);
-  const isFiltering = minSeverity !== 'all' || onlyActionable || search.trim() !== '';
 
   const cookieFindings = useMemo(() => filteredFindings.filter(f => f.category === 'cookies'), [filteredFindings]);
   const tokenFindings = useMemo(() => filteredFindings.filter(f => f.category === 'tokens'), [filteredFindings]);
@@ -283,29 +281,14 @@ export const AssessmentTab: React.FC = () => {
     window.setTimeout(() => setCopyToast(null), 2200);
   }, []);
 
-  const copyReport = useCallback(async () => {
-    const report = buildReport();
-    const payload = exportFormat === 'markdown' ? renderReportMarkdown(report) : renderReportJson(report);
-    try {
-      await navigator.clipboard.writeText(payload);
-      flashToast(`Copied ${exportFormat === 'markdown' ? 'Markdown' : 'JSON'} report.`);
-    } catch {
-      flashToast('Clipboard copy failed.');
-    }
-  }, [buildReport, exportFormat, flashToast]);
-
   const downloadReport = useCallback(() => {
     const report = buildReport();
     const iso = new Date().toISOString();
     let host = 'unknown-host';
     try { host = new URL(activeUrl).hostname || host; } catch { /* keep fallback */ }
-    if (exportFormat === 'markdown') {
-      downloadTextFile(buildReportFilename(host, iso, 'md'), 'text/markdown', renderReportMarkdown(report));
-    } else {
-      downloadTextFile(buildReportFilename(host, iso, 'json'), 'application/json', renderReportJson(report));
-    }
-    flashToast(`Downloaded ${exportFormat === 'markdown' ? 'Markdown' : 'JSON'} report.`);
-  }, [buildReport, exportFormat, activeUrl, flashToast]);
+    downloadTextFile(buildReportFilename(host, iso, 'html'), 'text/html;charset=utf-8', renderReportHtml(report));
+    flashToast('Downloaded HTML report.');
+  }, [buildReport, activeUrl, flashToast]);
 
   const metaLine = (() => {
     switch (activeSubtab) {
@@ -344,42 +327,16 @@ export const AssessmentTab: React.FC = () => {
         >
           Refresh
         </button>
-        <select
-          value={exportFormat}
-          onChange={e => setExportFormat(e.target.value as 'markdown' | 'json')}
-          title="Export format"
-          className="px-1 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 rounded transition-colors shrink-0 focus:outline-none focus:border-blue-800/50"
-        >
-          <option value="markdown">MD</option>
-          <option value="json">JSON</option>
-        </select>
-        <button
-          onClick={() => { void copyReport(); }}
-          className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-emerald-400 hover:border-emerald-800/50 rounded transition-colors shrink-0"
-          title="Copy the assessment report to the clipboard (honours the active filters)"
-        >
-          Copy
-        </button>
         <button
           onClick={downloadReport}
           className="px-1.5 py-0.5 text-[10px] border border-gray-700 bg-gray-800 text-gray-400 hover:text-amber-400 hover:border-amber-800/50 rounded transition-colors shrink-0"
-          title="Download the assessment report to a file (honours the active filters)"
+          title="Download the assessment report as a self-contained HTML file (honours the active filters)"
         >
-          Download
+          Download HTML
         </button>
       </div>
 
       <div className="px-2.5 py-2 border-b border-gray-800 bg-gray-900/20 shrink-0 space-y-2">
-        <div className="flex items-center gap-2 text-[10px]">
-          <span className="text-gray-600 uppercase tracking-widest select-none">
-            {isFiltering ? 'Posture (filtered)' : 'Posture'}
-          </span>
-          <span className={toneTextClasses('bad')}>High {postureCounts.high}</span>
-          <span className={toneTextClasses('warn')}>Medium {postureCounts.medium}</span>
-          <span className={toneTextClasses('info')}>Low {postureCounts.low}</span>
-          <span className={toneTextClasses('neutral')}>Info {postureCounts.info}</span>
-        </div>
-
         <div className="grid grid-cols-5 gap-1">
           {ASSESSMENT_SUBTABS.map(tab => (
             <button

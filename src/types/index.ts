@@ -60,63 +60,6 @@ export interface CookieData {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HTTP Header Rule types  (declarativeNetRequest)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type HeaderOperation = 'append' | 'set' | 'remove';
-
-/** A single header modification action. */
-export interface HeaderModification {
-  /** Header name, case-insensitive per HTTP spec. */
-  header: string;
-  operation: HeaderOperation;
-  /** Required for 'append' and 'set'; omitted for 'remove'. */
-  value?: string;
-}
-
-/** A complete declarativeNetRequest-style rule persisted by the extension. */
-export interface HeaderRule {
-  /** Unique numeric rule ID (required by the DNR API). */
-  id: number;
-  /** Higher number = higher priority when rules conflict. */
-  priority: number;
-  /** Display name set by the user. */
-  name: string;
-  /** Whether this rule is currently active. */
-  enabled: boolean;
-  /** URL filter pattern (supports wildcards, e.g. `*://*.example.com/*`). */
-  urlFilter: string;
-  /** Modifications applied to outgoing request headers. */
-  requestHeaders?: HeaderModification[];
-  /** Modifications applied to incoming response headers. */
-  responseHeaders?: HeaderModification[];
-  /**
-   * When set, the DNR rule is restricted to this domain only
-   * (maps to `requestDomains` in the RuleCondition).
-   * When absent or undefined the rule applies to all URLs matched by `urlFilter`.
-   */
-  domainScope?: string;
-  /** ISO 8601 creation timestamp. */
-  createdAt: string;
-  /** ISO 8601 last-updated timestamp. */
-  updatedAt: string;
-}
-
-/** Input required from the UI to create a new persisted header rule. */
-export interface HeaderRuleDraft {
-  /** Display name set by the user. */
-  name: string;
-  /** URL filter pattern (supports wildcards, e.g. `*://*.example.com/*`). */
-  urlFilter: string;
-  /** Modifications applied to outgoing request headers. */
-  requestHeaders?: HeaderModification[];
-  /** Modifications applied to incoming response headers. */
-  responseHeaders?: HeaderModification[];
-  /** Optional domain restriction mapped to DNR requestDomains. */
-  domainScope?: string;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Storage inspection types  (content script → background → popup)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -129,18 +72,58 @@ export type TokenHint =
   | 'key-name'        // key name contains an auth-related keyword
   | 'ey-prefix';      // value starts with 'ey' (Base64Url-encoded '{')
 
-/** A single web storage entry that may contain an authentication token. */
+/** Category of a secret/PII pattern surfaced by the detection engine. */
+export type DetectionCategory =
+  | 'private-key'
+  | 'api-key'
+  | 'high-entropy-secret'
+  | 'credential'
+  | 'connection-string'
+  | 'pii-email'
+  | 'pii-card'
+  | 'pii-phone'
+  | 'pii-iban'
+  | 'pii-codice-fiscale'
+  | 'eu-vat';
+
+/** A single secret/PII match found inside a storage value. */
+export interface DetectionHit {
+  /** Stable detector identifier (e.g. `aws-access-key-id`). */
+  detectorId: string;
+  category: DetectionCategory;
+  severity: AssessmentSeverity;
+  /** A redacted, display/export-safe sample of the first match. */
+  sample: string;
+  /** How many matches of this detector were found in the value. */
+  matchCount: number;
+  /** True when a code-side checksum (Luhn / mod-97 / CF) validated the match. */
+  validated?: boolean;
+}
+
+/** A single web storage entry that may contain an authentication token or secret. */
 export interface StorageEntry {
   /** The storage area where the entry was found. */
   area: WebStorageArea;
   /** The storage key. */
   key: string;
-  /** The raw string value stored under the key. */
+  /**
+   * The string value stored under the key. Truncated to a bounded length, and
+   * redacted at the source when high-sensitivity secrets/PII are detected —
+   * except whole-value JWTs, which the Tokens tab needs intact to decode.
+   */
   value: string;
   /** One or more reasons this entry was flagged. */
   hints: TokenHint[];
   /** True when the value passes the full JWT structural validation. */
   isJwt: boolean;
+  /** Secret/PII matches found in the value (absent when none). */
+  detections?: DetectionHit[];
+  /** True when `value` was rewritten to mask detected secrets/PII. */
+  valueRedacted?: boolean;
+  /** Length of the original (pre-truncation, pre-redaction) value. */
+  valueLength?: number;
+  /** FNV-1a 32-bit hex of the raw value — stable change detection under redaction. */
+  valueFingerprint?: string;
 }
 
 /** Full result of a web storage scan sent from the content script. */
@@ -352,16 +335,8 @@ export interface TokenAssessmentSummary {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type MessageType =
-  // Cookie operations
+  // Cookie reading (passive — the panel needs a URL context the background supplies)
   | 'GET_COOKIES'
-  | 'SET_COOKIE'
-  | 'DELETE_COOKIE'
-  // Header rule operations
-  | 'GET_HEADER_RULES'
-  | 'ADD_HEADER_RULE'
-  | 'UPDATE_HEADER_RULE'
-  | 'DELETE_HEADER_RULE'
-  | 'TOGGLE_HEADER_RULE'
   // Storage token inspection (content → background, popup → background)
   | 'STORAGE_SCAN_RESULT'   // content script pushes scan results
   | 'GET_STORAGE_TOKENS'    // popup requests cached results for active tab
@@ -379,9 +354,7 @@ export type MessageType =
   // Tab info
   | 'GET_ACTIVE_TAB_INFO'
   // Live response header cache
-  | 'GET_TAB_HEADERS'        // popup requests cached headers for a tabId
-  // Rule ordering
-  | 'REORDER_HEADER_RULES'; // popup sends new ordered id array
+  | 'GET_TAB_HEADERS';       // popup requests cached headers for a tabId
 
 export interface ExtensionMessage<T = unknown> {
   type: MessageType;
@@ -399,7 +372,6 @@ export interface ExtensionResponse<T = unknown> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const STORAGE_KEYS = {
-  HEADER_RULES: 'headerRules',
   SETTINGS:     'settings',
   // Keyed by tab ID string at runtime; not a fixed key like the others
   // but declared here so the shape is documented alongside the rest.
@@ -407,6 +379,15 @@ export const STORAGE_KEYS = {
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
+
+/**
+ * Keys written by past versions that the current build no longer uses. Kept
+ * only so the update migration in the background worker can remove them from
+ * `chrome.storage.local` for upgrading users.
+ */
+export const LEGACY_STORAGE_KEYS = {
+  HEADER_RULES: 'headerRules',
+} as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Settings types
@@ -430,4 +411,41 @@ export interface ActiveTabInfo {
   url: string;
   origin: string;
   title?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Snapshot Diff  (forward-compat types — the diff feature itself lands later)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A snapshot captures the full browser-observable context at a point in time
+// (e.g. pre-login vs post-login) so a future release can diff two of them. The
+// types are declared now so the storage-detection work stays compatible; no
+// message types or handlers exist yet. Every field is already JSON-serializable.
+
+export const SNAPSHOT_SCHEMA_VERSION = '1.0' as const;
+
+/** Lightweight snapshot descriptor kept in the per-origin snapshot index. */
+export interface SnapshotMeta {
+  /** Stable unique id (e.g. crypto.randomUUID()). */
+  id: string;
+  /** User-facing label, e.g. "pre-login". */
+  name: string;
+  /** ISO 8601 capture time. */
+  createdAt: string;
+  /** Origin the snapshot was captured on. */
+  origin: string;
+}
+
+/** A full capture of the observable context at a point in time. */
+export interface ContextSnapshot extends SnapshotMeta {
+  schemaVersion: typeof SNAPSHOT_SCHEMA_VERSION;
+  activeUrl: string;
+  cookies: chrome.cookies.Cookie[];
+  storage: StorageScanResult | null;
+  requests: CachedRequest[];
+  pageResources: PageResourceObservation | null;
+  domObservation: TransportDomObservation | null;
+  webSockets: ObservedWebSocket[];
+  /** Findings frozen at capture time. */
+  findings: AssessmentFinding[];
 }

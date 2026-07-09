@@ -1,12 +1,36 @@
 {
   "name": "owasp-web-security-inspector",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "Browser extension for OWASP-inspired inspection and assessment of cookies, tokens, Set-Cookie responses, and HTTP security headers.",
+  "description": "Cross-browser extension for OWASP-inspired inspection, editing, and assessment of cookies, tokens, storage secrets, Set-Cookie responses, and HTTP security headers.",
+  "license": "MIT",
+  "author": "Francesco Favara",
+  "homepage": "https://github.com/Clipperone/owasp-web-security-inspector#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Clipperone/owasp-web-security-inspector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Clipperone/owasp-web-security-inspector/issues"
+  },
+  "keywords": [
+    "owasp",
+    "security",
+    "browser-extension",
+    "manifest-v3",
+    "cookies",
+    "jwt",
+    "csp",
+    "http-security-headers"
+  ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build",
+    "build": "vite build --mode chrome",
+    "build:chrome": "vite build --mode chrome",
+    "build:firefox": "vite build --mode firefox && node scripts/postbuild-firefox.mjs",
+    "build:all": "npm run build:chrome && npm run build:firefox",
+    "package": "node scripts/package.mjs",
     "lint": "tsc --noEmit",
     "eslint": "eslint .",
     "test": "vitest run",
@@ -27,6 +51,7 @@
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "adm-zip": "^0.5.18",
     "autoprefixer": "^10.4.17",
     "eslint": "^9.22.0",
     "eslint-plugin-react-hooks": "^5.2.0",

@@ -28,5 +28,9 @@ jobs:
       - name: Test
         run: npm run test
 
-      - name: Build
-        run: npm run build
+      - name: Build (Chrome/Edge + Firefox)
+        run: npm run build:all
+
+      - name: Lint the Firefox build (web-ext)
+        run: npx --yes web-ext lint --source-dir dist/firefox --self-hosted
+        continue-on-error: true

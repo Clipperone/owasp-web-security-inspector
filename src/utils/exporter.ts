@@ -1,5 +1,3 @@
-import type { HeaderRule } from '../types';
-
 /**
  * Escapes a string for safe embedding inside a bash single-quoted argument.
  *
@@ -13,35 +11,20 @@ function shEscape(s: string): string {
 
 /**
  * Produces a bash-safe `curl` command that replays the given URL with the
- * supplied cookies and/or enabled request-header modifications.
+ * supplied cookies.
  *
  * - All arguments are single-quoted to prevent bash injection.
- * - Only enabled request-header rules whose operation is `set` or `append`
- *   contribute `-H` flags.
- * - Response-header rules are intentionally ignored because `curl` cannot
- *   reproduce server-side response header mutations.
  * - The command uses line-continuations for readability.
  */
 export function exportToCurl(
   url: string,
   cookies: chrome.cookies.Cookie[],
-  headers: HeaderRule[],
 ): string {
   const parts: string[] = [`curl '${shEscape(url)}'`];
 
   if (cookies.length > 0) {
     const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
     parts.push(`  -b '${shEscape(cookieStr)}'`);
-  }
-
-  for (const rule of headers) {
-    if (!rule.enabled) continue;
-    const mods = rule.requestHeaders ?? [];
-    for (const mod of mods) {
-      if (mod.operation !== 'remove' && mod.value !== undefined) {
-        parts.push(`  -H '${shEscape(mod.header)}: ${shEscape(mod.value)}'`);
-      }
-    }
   }
 
   return parts.join(' \\\n');
@@ -82,11 +65,11 @@ export function exportToNetscape(cookies: chrome.cookies.Cookie[]): string {
 
 /**
  * Builds a filesystem-safe report filename such as
- * `owasp-assessment-app.example.com-2026-07-03T14-32-15.md`.
+ * `owasp-assessment-app.example.com-2026-07-03T14-32-15.html`.
  *
  * @param host - Page hostname (empty falls back to `unknown-host`).
  * @param iso  - An ISO 8601 timestamp (e.g. `new Date().toISOString()`).
- * @param ext  - File extension without the dot (`md` or `json`).
+ * @param ext  - File extension without the dot (e.g. `html`).
  */
 export function buildReportFilename(host: string, iso: string, ext: string): string {
   const safeHost = (host || 'unknown-host').replace(/[^a-zA-Z0-9.-]/g, '_');

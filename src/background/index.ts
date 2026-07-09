@@ -2,28 +2,26 @@
  * @file background/index.ts
  * @description Background service worker — Manifest V3.
  *
- * Responsibilities:
+ * The background never modifies requests, responses, or headers. It exposes only
+ * reads and scan triggers; the sole cookie write path is user-initiated in the
+ * Cookies tab, which calls chrome.cookies directly (not through this worker).
+ * This worker only:
  *
  *  1. Lifecycle (onInstalled)
  *     – Seed storage with defaults on first install.
- *     – Clear all dynamic DNR rules on every install/update so stale rules
- *       from a previous version never linger.
+ *     – On update, remove the legacy `headerRules` key written by pre-0.5.0
+ *       builds that supported request/response header rewriting.
  *
- *  2. DNR rule synchronisation
- *     – `updateNetworkRules(rules)` converts our `HeaderRule[]` to the DNR
- *       wire format and calls `chrome.declarativeNetRequest.updateDynamicRules`.
- *     – Only rules with `enabled: true` are pushed to the DNR engine.
+ *  2. Passive observation
+ *     – Cache document/XHR response headers per tab (webRequest, non-blocking).
+ *     – Record observed WebSocket handshakes per tab.
+ *     – Cache content-script scan results (storage / transport / page resources).
  *
- *  3. Message router (popup ↔ background)
- *     – GET_HEADER_RULES    – return all persisted rules from storage
- *     – ADD_HEADER_RULE     – save new rule to storage + sync DNR
- *     – UPDATE_HEADER_RULE  – update existing rule in storage + sync DNR
- *     – DELETE_HEADER_RULE  – remove rule from storage + sync DNR
- *     – TOGGLE_HEADER_RULE  – flip enabled flag in storage + sync DNR
- *     – GET_COOKIES         – bridge to chrome.cookies API
- *     – SET_COOKIE          – bridge to chrome.cookies API
- *     – DELETE_COOKIE       – bridge to chrome.cookies API
- *     – GET_ACTIVE_TAB_INFO – return active tab URL / origin
+ *  3. Message router (panel ↔ background)
+ *     – GET_COOKIES         – read-only bridge to chrome.cookies.getAll
+ *     – GET_STORAGE_TOKENS / GET_TRANSPORT_OBSERVATIONS / GET_PAGE_RESOURCES
+ *     – RUN_* scan triggers relayed to the active tab's content script
+ *     – GET_TAB_HEADERS / GET_TAB_WEBSOCKETS / GET_ACTIVE_TAB_INFO
  *
  *  All errors are caught silently — the service worker must never crash.
  */
@@ -34,20 +32,12 @@ import type {
   CookieData,
   ExtensionMessage,
   ExtensionResponse,
-  HeaderModification,
-  HeaderRuleDraft,
-  HeaderRule,
   ObservedWebSocket,
   PageResourceObservation,
   StorageScanResult,
   TransportDomObservation,
 } from '../types';
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
-import {
-  getRules,
-  normalizeRulePriorities,
-  setRules,
-} from '../utils/storageUtils';
+import { DEFAULT_SETTINGS, LEGACY_STORAGE_KEYS, STORAGE_KEYS } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -57,20 +47,19 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   // Wrap in void + silent catch — onInstalled must never propagate errors
   void (async () => {
     try {
-      // Always flush dynamic DNR rules on install/update so stale rules
-      // from a previous extension version cannot persist across upgrades.
-      await clearAllDynamicRules();
-
       if (reason === 'install') {
         // First-time install: seed storage with factory defaults
         await chrome.storage.local.set({
-          [STORAGE_KEYS.HEADER_RULES]: [],
-          [STORAGE_KEYS.SETTINGS]:     DEFAULT_SETTINGS,
+          [STORAGE_KEYS.SETTINGS]: DEFAULT_SETTINGS,
         });
       } else if (reason === 'update') {
-        // On update: restore only the rules that were enabled before the update
-        const stored = await getRules();
-        await updateNetworkRules(stored);
+        // Upgraders from a pre-0.5.0 build may still have persisted header
+        // rules. The declarativeNetRequest permission is gone, so any dynamic
+        // rules stopped applying the moment the permission was dropped; we only
+        // need to purge the now-orphaned storage key. (No DNR API call is
+        // possible here — chrome.declarativeNetRequest is undefined without the
+        // permission and would throw.)
+        await chrome.storage.local.remove(LEGACY_STORAGE_KEYS.HEADER_RULES);
       }
     } catch {
       // Silent — service worker must not crash on install
@@ -78,138 +67,20 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   })();
 });
 
-// Open the side panel when the user clicks the toolbar icon. Wrapped in a
-// silent catch so a Chrome build without the sidePanel API never crashes the
-// service worker (the manifest already gates install on Chrome 114+).
-chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
-  // Silent — the side panel is a progressive enhancement of the toolbar action.
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DNR helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Removes **all** dynamic DNR rules currently registered by this extension.
- * Used on install/update to ensure a clean slate.
- */
-async function clearAllDynamicRules(): Promise<void> {
-  const existing = await chrome.declarativeNetRequest.getDynamicRules();
-  if (existing.length === 0) return;
-
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: existing.map((r) => r.id),
+// Open the panel when the user clicks the toolbar icon.
+//   - Chromium (Chrome/Edge): the sidePanel API opens the side panel on click.
+//   - Firefox: there is no sidePanel API; the manifest's sidebar_action renders
+//     the same page, and clicking the toolbar action toggles it via
+//     browser.sidebarAction.toggle() (a user gesture, so it is allowed).
+// Both paths are wrapped so a missing API never crashes the service worker.
+if (chrome.sidePanel?.setPanelBehavior) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {
+    // Silent — the side panel is a progressive enhancement of the toolbar action.
   });
-}
-
-/**
- * Converts a `HeaderModification` (our app model) to the object shape
- * expected by `chrome.declarativeNetRequest.ModifyHeaderInfo`.
- *
- * The DNR API accepts:
- *   - `operation: "append" | "set" | "remove"`
- *   - `header: string`           (lowercase recommended)
- *   - `value?: string`           (required for append/set, absent for remove)
- */
-function toModifyHeaderInfo(
-  mod: HeaderModification,
-): chrome.declarativeNetRequest.ModifyHeaderInfo {
-  const base = {
-    header:    mod.header.toLowerCase(), // HTTP headers are case-insensitive
-    operation: mod.operation as chrome.declarativeNetRequest.HeaderOperation,
-  };
-
-  // `value` must be present for append/set and absent for remove
-  if (mod.operation !== 'remove' && mod.value !== undefined) {
-    return { ...base, value: mod.value };
-  }
-
-  return base;
-}
-
-/**
- * Converts a single `HeaderRule` to a `chrome.declarativeNetRequest.Rule`.
- *
- * Rule structure:
- * ```
- * {
- *   id:       number                  (must be a positive integer ≥ 1)
- *   priority: number                  (higher = higher priority in DNR)
- *   condition: { urlFilter, ... }
- *   action: {
- *     type: "modifyHeaders",
- *     requestHeaders?,               (outgoing request header modifications)
- *     responseHeaders?,              (incoming response header modifications)
- *   }
- * }
- * ```
- */
-function toDNRRule(rule: HeaderRule): chrome.declarativeNetRequest.Rule {
-  const action: chrome.declarativeNetRequest.RuleAction = {
-    type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
-  };
-
-  if (rule.requestHeaders && rule.requestHeaders.length > 0) {
-    action.requestHeaders = rule.requestHeaders.map(toModifyHeaderInfo);
-  }
-
-  if (rule.responseHeaders && rule.responseHeaders.length > 0) {
-    action.responseHeaders = rule.responseHeaders.map(toModifyHeaderInfo);
-  }
-
-  return {
-    id:       rule.id,
-    priority: rule.priority,
-    condition: {
-      // urlFilter supports wildcards: e.g. "*://*.example.com/*"
-      urlFilter:       rule.urlFilter,
-      // Apply to all resource types unless scoped further in a future version
-      resourceTypes:  ['main_frame', 'sub_frame', 'xmlhttprequest', 'other'] as
-                       chrome.declarativeNetRequest.ResourceType[],
-      ...(rule.domainScope ? { requestDomains: [rule.domainScope] } : {}),
-    },
-    action,
-  };
-}
-
-/**
- * Synchronises the DNR engine with the current application rule set.
- *
- * Strategy:
- *  1. Fetch all currently registered dynamic rules from Chrome.
- *  2. From the provided `rules` array, select only those where `enabled: true`.
- *  3. Remove every existing dynamic rule (full replace — simpler and safer
- *     than a diff-based update for the typical rule set sizes here).
- *  4. Add the enabled rules in their DNR wire format.
- *
- * @param rules - The full list of `HeaderRule` objects from storage.
- *                Disabled rules are filtered out before pushing to DNR.
- */
-export async function updateNetworkRules(rules: HeaderRule[]): Promise<void> {
-  // IDs of all currently registered dynamic rules to remove
-  const existing    = await chrome.declarativeNetRequest.getDynamicRules();
-  const removeRuleIds = existing.map((r) => r.id);
-
-  // Only push enabled rules to the DNR engine
-  const addRules = rules
-    .filter((r) => r.enabled)
-    .map(toDNRRule);
-
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds,
-    addRules,
+} else if (typeof browser !== 'undefined' && browser?.sidebarAction) {
+  chrome.action.onClicked.addListener(() => {
+    void browser?.sidebarAction?.toggle();
   });
-}
-
-async function persistRulesAndSync(rules: HeaderRule[]): Promise<HeaderRule[]> {
-  await setRules(rules);
-  await updateNetworkRules(rules);
-  return rules;
-}
-
-function nextRuntimeRuleId(rules: HeaderRule[]): number {
-  if (rules.length === 0) return 1;
-  return Math.max(...rules.map(rule => rule.id)) + 1;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -329,86 +200,10 @@ async function handleMessage(
   try {
     switch (message.type) {
 
-      // ── Header rule CRUD ────────────────────────────────────────────────
-
-      case 'GET_HEADER_RULES': {
-        const rules = await getRules();
-        return { success: true, data: rules };
-      }
-
-      case 'ADD_HEADER_RULE': {
-        const draft = message.payload as HeaderRuleDraft;
-        const existing = await getRules();
-        const now = new Date().toISOString();
-        const createdRule: HeaderRule = {
-          id: nextRuntimeRuleId(existing),
-          priority: 1,
-          name: draft.name,
-          enabled: true,
-          urlFilter: draft.urlFilter,
-          requestHeaders: draft.requestHeaders,
-          responseHeaders: draft.responseHeaders,
-          domainScope: draft.domainScope,
-          createdAt: now,
-          updatedAt: now,
-        };
-        const normalized = normalizeRulePriorities([...existing, createdRule]);
-        const all = await persistRulesAndSync(normalized);
-        return { success: true, data: all };
-      }
-
-      case 'UPDATE_HEADER_RULE': {
-        const incoming = message.payload as HeaderRule;
-        const existing = await getRules();
-        const current = existing.find(rule => rule.id === incoming.id);
-        if (!current) {
-          return { success: false, error: `Rule ${incoming.id} not found.` };
-        }
-
-        const updatedRule: HeaderRule = {
-          ...current,
-          ...incoming,
-          createdAt: current.createdAt,
-          updatedAt: new Date().toISOString(),
-        };
-        const updatedRules = existing.map(rule => (rule.id === incoming.id ? updatedRule : rule));
-        const all = await persistRulesAndSync(updatedRules);
-        return { success: true, data: all };
-      }
-
-      case 'DELETE_HEADER_RULE': {
-        const id = message.payload as number;
-        const existing = await getRules();
-        const filtered = existing.filter(rule => rule.id !== id);
-        if (filtered.length === existing.length) {
-          return { success: false, error: `Rule ${id} not found.` };
-        }
-        const normalized = normalizeRulePriorities(filtered);
-        const all = await persistRulesAndSync(normalized);
-        return { success: true, data: all };
-      }
-
-      case 'TOGGLE_HEADER_RULE': {
-        const id = message.payload as number;
-        const existing = await getRules();
-        const current = existing.find(rule => rule.id === id);
-        if (!current) {
-          return { success: false, error: `Rule ${id} not found.` };
-        }
-
-        const toggled: HeaderRule = {
-          ...current,
-          enabled: !current.enabled,
-          updatedAt: new Date().toISOString(),
-        };
-        const updatedRules = existing.map(rule => (rule.id === id ? toggled : rule));
-        const all = await persistRulesAndSync(updatedRules);
-        return { success: true, data: all };
-      }
-
-      // ── Cookie bridge ───────────────────────────────────────────────────
-      // The popup cannot call chrome.cookies directly because it needs a URL
-      // context; the background asks Chrome on its behalf.
+      // ── Cookie bridge (read) ────────────────────────────────────────────
+      // The panel reads cookies through the background. There is no cookie
+      // *write* bridge: the Cookies tab performs user-initiated edits by calling
+      // chrome.cookies.set/remove directly, so no mutating message type exists.
 
       case 'GET_COOKIES': {
         const url     = message.payload as string;
@@ -416,17 +211,6 @@ async function handleMessage(
         return { success: true, data: cookies };
       }
 
-      case 'SET_COOKIE': {
-        const details = message.payload as chrome.cookies.SetDetails;
-        const cookie  = await chrome.cookies.set(details);
-        return { success: true, data: cookie };
-      }
-
-      case 'DELETE_COOKIE': {
-        const details = message.payload as chrome.cookies.CookieDetails;
-        await chrome.cookies.remove(details);
-        return { success: true, data: null };
-      }
       // ── Storage token inspection ─────────────────────────────────────────────
       // Content script pushes results after scanning localStorage /
       // sessionStorage. We cache per tab using chrome.storage.session
@@ -534,25 +318,6 @@ async function handleMessage(
           };
         }
       }
-      // ── Rule reordering ─────────────────────────────────────────────────
-
-      case 'REORDER_HEADER_RULES': {
-        const orderedIds = message.payload as number[];
-        const existing   = await getRules();
-        const idToRule   = new Map(existing.map(r => [r.id, r]));
-        const reordered = orderedIds
-          .map(id => idToRule.get(id))
-          .filter((r): r is HeaderRule => r !== undefined);
-
-        if (reordered.length !== existing.length) {
-          return { success: false, error: 'Reorder payload does not match the persisted rule set.' };
-        }
-
-        const normalized = normalizeRulePriorities(reordered);
-        const all = await persistRulesAndSync(normalized);
-        return { success: true, data: all };
-      }
-
       // ── Active tab info ─────────────────────────────────────────────────
 
       case 'GET_ACTIVE_TAB_INFO': {

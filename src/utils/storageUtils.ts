@@ -11,8 +11,8 @@
  *   - A single migration point if keys or schemas change in the future
  */
 
-import type { ExtensionSettings, HeaderRule } from '../types';
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
+import type { ExtensionSettings } from '../types';
+import { DEFAULT_SETTINGS, LEGACY_STORAGE_KEYS, STORAGE_KEYS } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Low-level typed primitives
@@ -48,43 +48,6 @@ async function setItem<T>(key: string, value: T): Promise<void> {
  */
 async function removeItem(key: string): Promise<void> {
   await chrome.storage.local.remove(key);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Header Rule operations
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Returns all persisted header rules sorted by `priority` descending.
- * Returns an empty array when no rules have been saved yet.
- *
- * Sorting ensures the UI list and the declarativeNetRequest API always
- * operate on the same deterministic order.
- */
-export async function getRules(): Promise<HeaderRule[]> {
-  const stored = await getItem<HeaderRule[]>(STORAGE_KEYS.HEADER_RULES);
-  if (!Array.isArray(stored)) return [];
-  // Return a new sorted array — never mutate the stored reference
-  return [...stored].sort((a, b) => b.priority - a.priority);
-}
-
-/**
- * Reassigns rule priorities from top to bottom so the first rule in the array
- * has the highest DNR priority and the last rule has the lowest one.
- */
-export function normalizeRulePriorities(rules: HeaderRule[]): HeaderRule[] {
-  return rules.map((rule, index) => ({
-    ...rule,
-    priority: rules.length - index,
-  }));
-}
-
-/**
- * Persists the complete ordered rule list exactly as provided.
- * Callers are responsible for any priority normalization before writing.
- */
-export async function setRules(rules: HeaderRule[]): Promise<void> {
-  await setItem(STORAGE_KEYS.HEADER_RULES, rules);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,14 +91,13 @@ export async function updateSettings(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Clears all extension data and re-seeds storage with factory defaults.
+ * Clears extension data and re-seeds storage with factory defaults.
  * Intended to back a "Reset to defaults" action in the settings panel.
  *
- * This does NOT clear rules managed by `declarativeNetRequest` — the
- * background service worker must call `chrome.declarativeNetRequest
- * .updateDynamicRules` separately to remove active DNR rules.
+ * Also removes the legacy `headerRules` key left behind by pre-0.5.0 builds
+ * that supported request/response header rewriting (now removed).
  */
 export async function resetStorage(): Promise<void> {
-  await removeItem(STORAGE_KEYS.HEADER_RULES);
+  await removeItem(LEGACY_STORAGE_KEYS.HEADER_RULES);
   await setItem(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
 }

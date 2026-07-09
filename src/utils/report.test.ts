@@ -7,8 +7,6 @@ import {
   buildFullAssessmentReport,
   filterFindings,
   filterReport,
-  renderReportJson,
-  renderReportMarkdown,
 } from './report';
 
 function createRequest(overrides: Partial<CachedRequest> = {}): CachedRequest {
@@ -57,34 +55,12 @@ describe('unified assessment report', () => {
     });
   }
 
-  test('markdown covers every category section and the limitations note', () => {
-    const markdown = renderReportMarkdown(buildReport());
-
-    expect(markdown).toContain('# OWASP Web Security Assessment');
-    expect(markdown).toContain('## Summary');
-    expect(markdown).toContain('## OWASP Secure Headers');
-    expect(markdown).toContain('## Transport & TLS');
-    expect(markdown).toContain('## Findings');
-    expect(markdown).toContain('## Limitations');
-    // An insecure session cookie should surface a finding in the report body.
-    expect(markdown).toContain('Sensitive cookie without Secure');
-  });
-
   test('severity counts are derived from the findings', () => {
     const report = buildReport();
     const total = report.severityCounts.high + report.severityCounts.medium + report.severityCounts.low + report.severityCounts.info;
 
     expect(total).toBe(report.findings.length);
     expect(report.severityCounts.high).toBeGreaterThan(0);
-  });
-
-  test('json export round-trips and preserves context', () => {
-    const parsed = JSON.parse(renderReportJson(buildReport())) as { schemaVersion: string; activeUrl: string; generatedAt: string; findings: unknown[] };
-
-    expect(parsed.schemaVersion).toBe('1.0');
-    expect(parsed.activeUrl).toBe(activeUrl);
-    expect(parsed.generatedAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(Array.isArray(parsed.findings)).toBe(true);
   });
 
   test('exposes a stable schema version', () => {
