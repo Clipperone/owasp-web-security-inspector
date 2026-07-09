@@ -81,7 +81,7 @@ This extension is intentionally browser-side only. It surfaces useful findings a
 
 ## Requirements
 
-- Node.js 20+ and npm 10+
+- Node.js 20.19+ or 22.12+, and npm 10+ (required by Vite 8)
 - Chrome/Edge 114+ (required by the side panel) or Firefox 115+
 
 ## Development Workflow

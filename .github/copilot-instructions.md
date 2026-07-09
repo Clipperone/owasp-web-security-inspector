@@ -6,7 +6,7 @@ Trust these instructions. Only search the codebase if this file is incomplete or
 
 **OWASP Web Security Inspector** is a small single-package, cross-browser extension (Chrome, Firefox, Edge) built with Manifest V3, React, TypeScript, Vite, and Tailwind. It inspects and assesses cookies, JWTs, storage tokens and secrets/PII, `Set-Cookie` responses, and browser-visible HTTP security headers. The **assessment is passive** (no probing, no request/response/header modification); the **Cookies tab** is the one explicit, user-initiated editing surface (`chrome.cookies.set/remove`). All logic is local; there is no backend and no external API.
 
-Validated environment here: Node.js 24.x, npm 11.x. README targets Node.js 20+ and npm 10+.
+Validated environment here: Node.js 24.x, npm 11.x. README targets Node.js 20.19+/22.12+ and npm 10+ (Vite 8 requirement).
 
 ## Build, Test, Run, Validate
 

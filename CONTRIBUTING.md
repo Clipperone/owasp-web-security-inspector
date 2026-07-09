@@ -8,7 +8,7 @@ please keep contributions aligned with that scope (see
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 20.19+ or 22.12+ (required by Vite 8)
 - npm 10+
 - Chrome/Edge 114+ or Firefox 115+
 
