@@ -1,0 +1,5 @@
+# Shows a "Sponsor" button on the repository.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+# NOTE: the GitHub Sponsors entry only takes effect once the account is enrolled
+# at https://github.com/sponsors (and "Sponsorships" is enabled in repo settings).
+github: [Clipperone]
