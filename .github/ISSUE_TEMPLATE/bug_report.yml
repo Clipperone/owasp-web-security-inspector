@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a problem with the extension (not a security vulnerability)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        ⚠️ **Do not report security vulnerabilities here.** Please use
+        [private vulnerability reporting](../security/advisories/new) instead
+        (see our [Security Policy](../../blob/main/SECURITY.md)).
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I searched existing issues and this has not already been reported.
+          required: true
+        - label: This is not a security vulnerability (those go through private reporting).
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and its impact.
+      placeholder: When I open the Cookies tab on site X, ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Precise steps so we can reproduce the behavior.
+      placeholder: |
+        1. Load the extension from dist/chrome
+        2. Open the side panel and go to '...'
+        3. Click '...'
+        4. See the error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Edge
+        - Firefox
+        - Other (specify below)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Extension and browser versions
+      description: e.g. extension 0.5.0, Chrome 126
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output / screenshots
+      description: |
+        Any relevant errors from the side panel or service-worker console.
+        **Redact any real secrets, tokens, cookies, or personal data.**
+      render: shell
+    validations:
+      required: false

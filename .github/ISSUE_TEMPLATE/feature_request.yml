@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an idea or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement! Please keep proposals within the
+        project's scope: a **browser-side** extension with a **passive assessment
+        engine** (no backend, no network calls, no site mutation beyond the
+        explicit, user-initiated cookie editor). See the
+        [roadmap](../../blob/main/roadmap.md) for direction and non-goals.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I searched existing issues and this has not already been requested.
+          required: true
+        - label: This fits the browser-side, zero-backend scope (it is not a TLS/network probe or a server-side check).
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and what makes it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to see? Reference an OWASP guideline if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

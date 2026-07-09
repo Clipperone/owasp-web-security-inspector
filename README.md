@@ -1,5 +1,8 @@
 # OWASP Web Security Inspector
 
+[![CI](https://github.com/Clipperone/owasp-web-security-inspector/actions/workflows/ci.yml/badge.svg)](https://github.com/Clipperone/owasp-web-security-inspector/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 OWASP Web Security Inspector is a browser-side extension for OWASP-inspired security review of cookies, JWTs, storage secrets, and HTTP headers, with a built-in cookie editor. It runs on **Chrome, Firefox, and Edge** (Manifest V3).
 
 Its **security assessment is passive**: it observes what the browser exposes and never probes endpoints, forces requests, or modifies requests, responses, or headers. The **Cookies tab** additionally offers explicit, user-initiated cookie management (create, edit, delete). Findings help reviewers compare what an application exposes in the browser against OWASP guidance, especially the OWASP Cheat Sheet Series and the broader OWASP Top 10 awareness model.
