@@ -383,9 +383,26 @@ export const TokensTab: React.FC<{
   const [manualToken, setManualToken] = useState<TokenData | null>(null);
   const [manualErr, setManualErr]     = useState<string | null>(null);
 
+  // ── Real-time manual decode ────────────────────────────────────────────────
+  const handleManualInput = (raw: string) => {
+    setManualRaw(raw);
+    const trimmed = raw.trim();
+    if (!trimmed) { setManualToken(null); setManualErr(null); return; }
+    if (!isJwt(trimmed)) {
+      setManualToken(null);
+      setManualErr('Not a valid JWT — expecting three Base64Url segments separated by dots.');
+      return;
+    }
+    const result = decodeJwt(trimmed);
+    if (!result.ok) { setManualToken(null); setManualErr(result.error); return; }
+    setManualToken(result.token);
+    setManualErr(null);
+  };
+
   // Pre-populate textarea when a token is pushed from another tab
   useEffect(() => {
     if (!initialToken) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing state from a token pushed by another tab (external event), not derivable during render
     handleManualInput(initialToken);
     onConsumeToken?.();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -428,6 +445,7 @@ export const TokensTab: React.FC<{
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data load from the chrome runtime (external system); the sync setLoading(true) is a no-op on mount
   useEffect(() => { void load(); }, [load]);
 
   // ── Decode storage entries that are JWTs ──────────────────────────────────
@@ -443,22 +461,6 @@ export const TokensTab: React.FC<{
     });
     return acc;
   }, []);
-
-  // ── Real-time manual decode ────────────────────────────────────────────────
-  const handleManualInput = (raw: string) => {
-    setManualRaw(raw);
-    const trimmed = raw.trim();
-    if (!trimmed) { setManualToken(null); setManualErr(null); return; }
-    if (!isJwt(trimmed)) {
-      setManualToken(null);
-      setManualErr('Not a valid JWT — expecting three Base64Url segments separated by dots.');
-      return;
-    }
-    const result = decodeJwt(trimmed);
-    if (!result.ok) { setManualToken(null); setManualErr(result.error); return; }
-    setManualToken(result.token);
-    setManualErr(null);
-  };
 
   const manualView: DecodedView | null = manualToken
     ? { source: 'manual', label: 'Live preview', raw: manualToken.raw, token: manualToken }

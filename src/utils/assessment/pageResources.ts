@@ -187,7 +187,7 @@ export function assessThirdParties(
 
   const thirdPartyOrigins = new Set<string>();
   for (const request of requests) {
-    let originHost = '';
+    let originHost: string;
     try {
       originHost = new URL(request.url).hostname;
     } catch {

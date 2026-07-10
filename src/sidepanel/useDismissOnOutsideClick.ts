@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 export function useDismissOnOutsideClick<T extends HTMLElement>(
-  ref: React.RefObject<T>,
+  ref: React.RefObject<T | null>,
   onDismiss: () => void,
   enabled: boolean,
 ): void {

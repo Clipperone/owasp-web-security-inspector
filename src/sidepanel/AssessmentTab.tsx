@@ -194,9 +194,8 @@ export const AssessmentTab: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data load via chrome runtime messaging (external system); the sync setLoading(true) is a no-op on mount
+  useEffect(() => { void load(); }, [load]);
 
   // Auto-refresh when the active tab navigates (full load or SPA route change) or
   // when the user switches tabs. Uses chrome.tabs events only — no extra permission
