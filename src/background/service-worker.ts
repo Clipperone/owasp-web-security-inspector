@@ -1,5 +1,5 @@
 /**
- * @file background/index.ts
+ * @file background/service-worker.ts
  * @description Background service worker — Manifest V3.
  *
  * The background never modifies requests, responses, or headers. It exposes only
