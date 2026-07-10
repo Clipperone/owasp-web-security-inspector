@@ -415,7 +415,7 @@ function observeResource(element: Element, kind: ObservedPageResource['kind'], u
   if (!rawUrl || rawUrl.trim().length === 0) return null;
 
   const url = resolveUrl(rawUrl);
-  let crossOrigin = false;
+  let crossOrigin: boolean;
   try {
     crossOrigin = new URL(url).origin !== window.location.origin;
   } catch {

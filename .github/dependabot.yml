@@ -14,6 +14,14 @@ updates:
       minor-and-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      # Packages with cross peer-dependencies must be bumped together, or the
+      # single-package PR fails `npm ci` (react-dom pins react, @eslint/js pins eslint, ...).
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+        update-types: ["major"]
+      eslint:
+        patterns: ["eslint", "@eslint/*", "eslint-plugin-*", "typescript-eslint"]
+        update-types: ["major"]
 
   # Actions pinned in the CI and release workflows.
   - package-ecosystem: "github-actions"

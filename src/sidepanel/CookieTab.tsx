@@ -161,6 +161,7 @@ export const CookieTab: React.FC<{
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data load from the chrome cookies API (external system); the sync setLoading(true) is a no-op on mount
   useEffect(() => { void load(); }, [load]);
 
   const closeExportMenu = useCallback(() => setExportOpen(false), []);

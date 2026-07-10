@@ -13,6 +13,7 @@
     "isolatedModules":            true,
     "noEmit":                     true,
     "jsx":                        "react-jsx",
+    "types":                      ["chrome"],
 
     /* Strict type checks */
     "strict":                     true,
@@ -20,10 +21,9 @@
     "noUnusedParameters":         true,
     "noFallthroughCasesInSwitch": true,
 
-    /* Path aliases (Phase 2 will use these) */
-    "baseUrl": ".",
+    /* Path aliases (Phase 2 will use these) — relative to this file; baseUrl is gone in TS 7 */
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src"],
