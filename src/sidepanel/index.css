@@ -1,4 +1,5 @@
-/* Tailwind CSS directives — must be the only content in this file */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind CSS entry point — must be the only content in this file */
+@import "tailwindcss";
+
+/* Class-based dark mode, as darkMode: 'class' in the v3 config (Phase 2 will use it) */
+@custom-variant dark (&:where(.dark, .dark *));
