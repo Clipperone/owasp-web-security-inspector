@@ -2,10 +2,32 @@
 
 [![CI](https://github.com/Clipperone/owasp-web-security-inspector/actions/workflows/ci.yml/badge.svg)](https://github.com/Clipperone/owasp-web-security-inspector/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Manifest V3](https://img.shields.io/badge/Manifest-V3-4285F4.svg)](manifest.json)
+[![Chrome · Firefox · Edge](https://img.shields.io/badge/Chrome%20%C2%B7%20Firefox%20%C2%B7%20Edge-supported-34A853.svg)](#requirements)
 
-OWASP Web Security Inspector is a browser-side extension for OWASP-inspired security review of cookies, JWTs, storage secrets, and HTTP headers, with a built-in cookie editor. It runs on **Chrome, Firefox, and Edge** (Manifest V3).
+> **Passive, browser-side security review** of cookies, tokens, web-storage secrets & PII, HTTP security headers, transport/TLS, and **chatbot / LLM / RAG** surfaces — with a self-contained, shareable HTML report. No backend, no external calls, everything runs locally.
+
+OWASP Web Security Inspector is a browser-side extension for OWASP-inspired security review of cookies, JWTs, web-storage secrets & PII, HTTP security headers, transport/TLS, and chatbot / LLM / RAG surfaces, with a built-in cookie editor. It runs on **Chrome, Firefox, and Edge** (Manifest V3).
 
 Its **security assessment is passive**: it observes what the browser exposes and never probes endpoints, forces requests, or modifies requests, responses, or headers. The **Cookies tab** additionally offers explicit, user-initiated cookie management (create, edit, delete). Findings help reviewers compare what an application exposes in the browser against OWASP guidance, especially the OWASP Cheat Sheet Series and the broader OWASP Top 10 awareness model.
+
+## Screenshots
+
+<!--
+  Drop the images into docs/screenshots/ (see docs/screenshots/README.md for the
+  exact filenames, sizes, and what to capture), then uncomment this block.
+
+<p align="center">
+  <img src="docs/screenshots/side-panel.png" alt="Assessment side panel" width="320">
+  &nbsp;
+  <img src="docs/screenshots/assessment-llm.png" alt="LLM/AI subtab" width="320">
+</p>
+<p align="center">
+  <img src="docs/screenshots/html-report.png" alt="Exported self-contained HTML report" width="640">
+</p>
+-->
+
+> 📸 UI screenshots are on the way — see [`docs/screenshots/`](docs/screenshots/) for the shot list; once the images are added, the gallery above renders automatically.
 
 ## What This Extension Is For
 
@@ -100,7 +122,7 @@ Request bodies are **never** read for arbitrary sites — only for the provider 
 
 - Manifest V3 (Chrome, Firefox, Edge)
 - Side panel UI via `chrome.sidePanel` (Chromium) / `sidebar_action` (Firefox)
-- React 18, TypeScript 5 (strict), Vite 5 with `@crxjs/vite-plugin`, Tailwind CSS 3
+- React 19, TypeScript 6 (strict), Vite 8 with `@crxjs/vite-plugin`, Tailwind CSS 4
 
 ## Requirements
 
