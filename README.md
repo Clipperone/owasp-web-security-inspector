@@ -51,6 +51,26 @@ For the LLM/AI review specifically, the browser cannot observe — and this exte
 - Per-finding **filters** (minimum severity, "actionable only", text search) drive both the on-screen view and the export, so what you see is what you export.
 - The assessment **re-scans automatically** when the active tab navigates (full load or SPA route change) or when you switch tabs — no extra permission.
 
+#### What the LLM/AI review can — and cannot — see (traffic model)
+
+The LLM/AI review is **passive and browser-side**, so it reports only what the browser can directly observe. This is the single most common source of confusion, so it is worth spelling out.
+
+**It surfaces findings when the browser directly sees an LLM signal:**
+
+- a request from the page **straight to a known model-provider API** (`api.openai.com`, `api.anthropic.com`, `generativelanguage.googleapis.com`, `*.openai.azure.com`, `api.cohere.ai`/`.com`, `api.mistral.ai`, `api-inference.huggingface.co`, `api.replicate.com`, `api.groq.com`, `api.perplexity.ai`, `api.together.xyz`/`.ai`, `openrouter.ai`);
+- a **recognized third-party AI chatbot widget** (Chatbase, Voiceflow, Botpress, Kommunicate, ChatBotKit — a deliberately small, non-exhaustive list);
+- a **provider API key or an LLM-named key** (e.g. `openai_…`, `chat_history`) in `localStorage`/`sessionStorage`/IndexedDB;
+- an **outgoing prompt body** — captured **only** for the known provider endpoints above, then run through the detection engine and **redacted in the background before caching**.
+
+**It intentionally stays empty when the model traffic is not browser-observable.** Most production chatbots and RAG apps call the model through **their own backend** (e.g. `POST https://app.example.com/api/chat`); the browser only sees a same-origin request to the app's server, not the provider call or the prompt. In that setup an **empty LLM/AI tab is the expected, correct result** — as far as the browser can tell, the prompt never crosses out of the first-party trust boundary, which is exactly the architecture OWASP LLM02 recommends. The tab lights up mainly for demos, playgrounds, prototypes, and "bring-your-own-key" tools that call a provider **directly from the browser**.
+
+**Two operational notes when testing:**
+
+- Observation starts **only once the extension is active**. Requests made before you loaded or reloaded the extension are not captured — reload the page (or repeat the action) afterwards.
+- The panel auto-refreshes on navigation, but an action that is **not** a navigation (for example a `fetch` fired from the DevTools console) will not update the view on its own — press **Refresh** in the assessment header to re-pull.
+
+Request bodies are **never** read for arbitrary sites — only for the provider endpoints listed above (scoped by URL match patterns) — and no new browser permission is used for this.
+
 ### Storage secret & PII detection
 
 - Beyond JWT/opaque-token hints, storage values are scanned by a ReDoS-safe detection engine for **private keys** (PEM), **provider API keys** (AWS, GitHub, Google, Slack, Stripe, OpenAI), **high-entropy secrets**, **embedded credentials** (Basic auth, `user:pass@` URLs, database connection strings, password fields in JSON/query values), and **PII** (emails, Luhn-valid payment cards, phone numbers, checksum-valid IBANs, Italian Codice Fiscale, EU VAT numbers).
