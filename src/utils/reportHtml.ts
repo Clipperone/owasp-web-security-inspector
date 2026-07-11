@@ -157,7 +157,7 @@ function findingCard(finding: AssessmentFinding): SafeHtml {
 
 function findingsGroup(report: FullAssessmentReport): SafeHtml {
   if (report.findings.length === 0) {
-    return html`<p class="empty">No cookie, token, storage, header, or transport findings were raised in the captured context.</p>`;
+    return html`<p class="empty">No cookie, token, storage, header, transport, or LLM/AI findings were raised in the captured context.</p>`;
   }
   const groups = FINDING_CATEGORY_ORDER.map(category => {
     const items = report.findings.filter(finding => finding.category === category);

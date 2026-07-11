@@ -182,6 +182,18 @@ export const DETECTORS: DetectorSpec[] = [
     pattern: /\bxox[abprs]-[A-Za-z0-9-]{10,250}\b/g,
     redact: m => partialMask(m, 5, 4),
   },
+  // Anthropic keys share the `sk-` prefix with OpenAI, so this detector is
+  // listed first: on the overlapping span both are api-key + validated, and the
+  // engine's tie-break falls back to catalog order, keeping the Anthropic hit.
+  {
+    id: 'anthropic-key',
+    category: 'api-key',
+    severity: 'high',
+    prefilter: v => v.includes('sk-ant-'),
+    pattern: /\bsk-ant-[A-Za-z0-9_-]{20,250}\b/g,
+    validate: m => shannonEntropy(m) >= 3.5,
+    redact: m => partialMask(m, 7, 4),
+  },
   {
     id: 'openai-key',
     category: 'api-key',
@@ -189,6 +201,22 @@ export const DETECTORS: DetectorSpec[] = [
     prefilter: v => v.includes('sk-'),
     pattern: /\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,250}\b/g,
     validate: m => shannonEntropy(m) >= 3.5,
+    redact: m => partialMask(m, 3, 4),
+  },
+  {
+    id: 'huggingface-token',
+    category: 'api-key',
+    severity: 'high',
+    prefilter: v => v.includes('hf_'),
+    pattern: /\bhf_[A-Za-z0-9]{34,40}\b/g,
+    redact: m => partialMask(m, 3, 4),
+  },
+  {
+    id: 'replicate-token',
+    category: 'api-key',
+    severity: 'high',
+    prefilter: v => v.includes('r8_'),
+    pattern: /\br8_[A-Za-z0-9]{37,40}\b/g,
     redact: m => partialMask(m, 3, 4),
   },
 

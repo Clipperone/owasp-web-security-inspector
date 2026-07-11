@@ -36,14 +36,17 @@ This extension is intentionally browser-side only. It surfaces useful findings a
 - session rotation correctness on the server
 - full formal compliance with OWASP ASVS or other standards
 
+For the LLM/AI review specifically, the browser cannot observe — and this extension does not assess — server-side risks such as **prompt injection** robustness (LLM01, only the injection *surface* is hinted at), **data and model poisoning** (LLM04), **excessive agency** of server-side tools/agents (LLM06), **vector and embedding weaknesses** in the RAG store (LLM08), **misinformation** in model output (LLM09), or **unbounded consumption** limits (LLM10). It reports LLM02, LLM07, and partial LLM03/LLM05 signals only.
+
 ## Main Capabilities
 
 ### Assessment
 
-- Incremental assessment workspace with a second-level tab model: `Headers`, `Transport`, `Cookies`, `Tokens`, `Storage`.
+- Incremental assessment workspace with a second-level tab model: `Headers`, `Transport`, `Cookies`, `Tokens`, `Storage`, `LLM/AI`.
 - **Headers** validates the active page response against the OWASP Secure Headers project semantics, grouped into collapsible `Required`, `Advisory`, and `Should Be Absent` sections with per-section `Fail`/`Warn`/`Pass` counters. Missing required headers are `Fail`; present-but-noncompliant values are `Warn`. Deep per-directive **Content-Security-Policy** analysis flags `unsafe-inline`/`unsafe-eval`, wildcard and insecure-scheme sources, missing `object-src`/`base-uri`/`frame-ancestors`/`default-src`, and recognizes Trusted Types, violation reporting, nonce/hash mitigation, and report-only mode.
 - **Transport & TLS** is a passive browser-side review of HTTPS adoption, sensitive-flow exposure, HSTS posture, downgrade signals, and transport evidence quality — using only observed requests, response headers, storage hints, and current-document DOM metadata. It never probes endpoints or forces requests. It also covers **Subresource Integrity**, **mixed content**, insecure **`ws://` WebSockets**, and a best-effort **third-party origin/cookie inventory** (eTLD+1 heuristic).
 - **Cookies / Tokens / Storage** surface the cookie, JWT/opaque-token, and web-storage findings produced by the same engine, each in its own subtab.
+- **LLM/AI** is a passive review of chatbot / LLM / RAG surfaces aligned with the OWASP Top 10 for LLM Applications 2025. From browser-observable signals it flags direct browser-to-LLM-provider API calls (OpenAI, Anthropic, Google Gemini, Azure OpenAI, Cohere, Mistral, Hugging Face, Replicate, Groq, Perplexity, Together, OpenRouter), sensitive data or system/developer prompts inside outgoing prompt payloads (LLM02/LLM07), conversation history persisted in web storage, third-party AI chatbot widgets (LLM03), and a CSP-inferred model-output XSS surface (LLM05). Outgoing prompt bodies are captured only for known provider endpoints and are redacted in the background before caching. The subtab stays empty when no LLM/RAG signals are observed. Provider API keys exposed in web storage surface under the Storage subtab.
 - **Local JWT signature verification** — the Tokens tab includes an opt-in "Verify signature" panel that runs entirely in the browser via the Web Crypto API (HS/RS/PS/ES; explicit algorithm choice to block algorithm-confusion; always rejects `alg: none`). No key material leaves the browser.
 - Per-finding **filters** (minimum severity, "actionable only", text search) drive both the on-screen view and the export, so what you see is what you export.
 - The assessment **re-scans automatically** when the active tab navigates (full load or SPA route change) or when you switch tabs — no extra permission.
@@ -136,7 +139,7 @@ Pushing a `v*` tag triggers the **Release** GitHub Action, which builds all thre
 - `cookies`: read cookies for inspection, and write them for the user-initiated Cookies tab editor
 - `storage`: persist local settings and cache observations in the ephemeral session store
 - `activeTab`: resolve the active page context
-- `webRequest`: capture response headers for inspection (non-blocking, observation only)
+- `webRequest`: capture response headers, WebSocket handshakes, and — only for known LLM provider endpoints — outgoing request bodies for the LLM/AI review (non-blocking, observation only; bodies are redacted in the background before caching)
 - `sidePanel`: render the review UI in the browser side panel (Chromium)
 - `host_permissions: <all_urls>`: observe across sites (optional and user-granted on Firefox)
 
@@ -147,6 +150,7 @@ The extension holds **no** request/response modification capability; cookie writ
 - All processing stays in the browser. No backend or external API is used for token decoding, assessment logic, detection, or report generation.
 - Cached observations live in `chrome.storage.session` (memory-only, cleared when the browser closes).
 - Detected storage secrets and PII are redacted before they leave the page.
+- Outgoing prompt bodies are captured only for known LLM provider endpoints and are run through the same detection engine and redacted in the background service worker before anything is cached, so raw secrets/PII never persist in the clear.
 
 ## OWASP References
 
@@ -159,5 +163,7 @@ The extension holds **no** request/response modification capability; cookie writ
 - OWASP HTTP Strict Transport Security Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html
 - OWASP Cross-Site Request Forgery Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
 - OWASP Cross Site Scripting Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+- OWASP Top 10 for LLM Applications 2025: https://genai.owasp.org/llm-top-10/
+- OWASP GenAI Security Project: https://genai.owasp.org/
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full component map and message flow, and [CONTRIBUTING.md](CONTRIBUTING.md) to get started.

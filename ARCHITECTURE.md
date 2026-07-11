@@ -2,8 +2,9 @@
 
 OWASP Web Security Inspector is a Manifest V3 extension (Chrome, Firefox, Edge)
 that inspects and assesses browser-observable session security: cookies, JWTs,
-web-storage tokens and secrets, `Set-Cookie` delivery, HTTP security headers, and
-transport posture. All logic runs locally in the browser — there is no backend
+web-storage tokens and secrets, `Set-Cookie` delivery, HTTP security headers,
+transport posture, and chatbot / LLM / RAG surfaces. All logic runs locally in
+the browser — there is no backend
 and no external API. The **security assessment is passive** (it never probes
 endpoints, forces requests, or auto-changes anything); the **Cookies tab** is the
 one place with explicit, user-initiated writes (`chrome.cookies.set`/`remove`).
@@ -15,7 +16,8 @@ Request/response headers are never modifiable.
 manifest.json            MV3 (Chromium) manifest, read directly by @crxjs/vite-plugin
 src/
   background/index.ts    Service worker: lifecycle/migration, message router,
-                         response-header + WebSocket + scan caches, panel behaviour
+                         response-header + WebSocket + LLM-prompt-body + scan
+                         caches, panel behaviour
   content/index.ts       Content script: scans web storage and observes transport
                          signals in the page (read-only), reports to the background
   sidepanel/             React UI served through the side panel / sidebar
@@ -32,6 +34,8 @@ src/
     reportHtml.ts        Self-contained HTML report renderer (escaped, zero-JS)
     jwtUtils.ts          Local JWT decode/validation (no external library)
     jwtVerify.ts         Local JWT signature verification via Web Crypto
+    requestBody.ts       Pure decode + background-side redaction of captured
+                         outgoing LLM prompt bodies (CapturedRequestBody)
     cookieUtils.ts       Cookie URL/id helpers
     exporter.ts          Cookie export (curl, Netscape) + file download helper
     storageUtils.ts      Typed wrapper around chrome.storage.local
@@ -61,13 +65,21 @@ content     ──sendMessage──▶  background  (cached per tab)  ──▶ 
 Key message types live in `src/types/index.ts` (`MessageType`): `GET_COOKIES`,
 `GET_TAB_HEADERS`, `GET_STORAGE_TOKENS`, `RUN_STORAGE_SCAN`,
 `GET_TRANSPORT_OBSERVATIONS`, `GET_PAGE_RESOURCES`, `GET_TAB_WEBSOCKETS`,
-`GET_ACTIVE_TAB_INFO`, and the `*_SCAN_RESULT` ingestion messages. The background
-exposes only reads and scan triggers (no header/request/response mutation);
-cookie writes bypass it and run directly from the panel.
+`GET_TAB_REQUEST_BODIES`, `GET_ACTIVE_TAB_INFO`, and the `*_SCAN_RESULT`
+ingestion messages. The background exposes only reads and scan triggers (no
+header/request/response mutation); cookie writes bypass it and run directly from
+the panel.
 
 The background captures response headers and WebSocket handshakes via
 non-blocking `webRequest` observers; it holds no request/response modification
-capability.
+capability. A second non-blocking `onBeforeRequest` observer captures outgoing
+request bodies **only for known LLM provider endpoints** (scoped by URL match
+patterns). Because these bodies are visible only in the background — the
+page-side redaction never runs there — the worker runs them through the same
+detection engine (`utils/requestBody.ts` → `runDetectors`) and caches only the
+redacted `CapturedRequestBody`, keeping raw secrets/PII out of the clear. This is
+the sole observation that reads request bodies; no new permission is required
+(`webRequest` + `<all_urls>` already cover it).
 
 ## The assessment engine (`src/utils/assessment/`)
 
@@ -85,11 +97,17 @@ public API is unchanged whichever module a function lives in:
 - `cookies.ts` — cookie-jar findings and summaries
 - `tokens.ts` — JWT/opaque token risk findings and summaries
 - `storageSecrets.ts` — maps detection hits to findings (`assessStorageSecrets`)
+- `llm.ts` — passive chatbot / LLM / RAG analysis (`assessLlm`): direct
+  browser→provider API calls, sensitive data and system prompts in outgoing
+  prompt bodies, conversation storage, AI chatbot widgets, and a CSP-inferred
+  output-handling surface. Aligned with the OWASP Top 10 for LLM Applications
+  2025 (LLM02/LLM07, partial LLM03/LLM05); softer inference-based findings are
+  gated behind an `isLikelyLlmApp` signal
 - `findings.ts` — `assessHeaders` (CORS/cache/disclosure), `buildAssessmentFindings`
   (the aggregate, deduped, severity-sorted list) and `getFindingCounts`
 
 Every finding is an `AssessmentFinding` tagged with a `category`
-(`cookies` | `tokens` | `storage` | `headers` | `transport`) and a `severity`.
+(`cookies` | `tokens` | `storage` | `headers` | `transport` | `llm`) and a `severity`.
 The Assessment subtabs render `buildAssessmentFindings(...)` filtered by category;
 nothing is computed in React components. Finding IDs are content-derived (never
 array indices) so they stay stable across re-scans and future snapshot diffs.
@@ -152,4 +170,8 @@ Styling is Tailwind-only; `index.css` contains just the Tailwind directives.
 Browser-side only. It surfaces best-practice gaps from what the browser can
 observe. It does **not** verify backend session invalidation, JWT signature
 trust, secret strength, server-side rotation, or formal OWASP ASVS compliance.
-JWT handling is intentionally local and dependency-free.
+JWT handling is intentionally local and dependency-free. The LLM/RAG review is
+likewise limited to browser-observable signals: it does not test prompt-injection
+robustness (LLM01), data/model poisoning (LLM04), server-side agent permissions
+(LLM06), vector/embedding weaknesses (LLM08), misinformation (LLM09), or
+consumption limits (LLM10) — those are server-side and out of scope.

@@ -16,3 +16,4 @@ export {
   assessWebSockets,
   assessThirdParties,
 } from './pageResources';
+export { assessLlm } from './llm';

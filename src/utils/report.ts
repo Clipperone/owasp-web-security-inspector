@@ -156,9 +156,10 @@ export const FINDING_CATEGORY_LABEL: Record<AssessmentCategory, string> = {
   storage: 'Storage',
   headers: 'Headers',
   transport: 'Transport',
+  llm: 'LLM/AI',
 };
 
-export const FINDING_CATEGORY_ORDER: AssessmentCategory[] = ['cookies', 'tokens', 'storage', 'headers', 'transport'];
+export const FINDING_CATEGORY_ORDER: AssessmentCategory[] = ['cookies', 'tokens', 'storage', 'headers', 'transport', 'llm'];
 
 /**
  * The fixed limitations disclaimer, as discrete paragraphs so every serializer
@@ -166,5 +167,5 @@ export const FINDING_CATEGORY_ORDER: AssessmentCategory[] = ['cookies', 'tokens'
  */
 export const REPORT_LIMITATIONS: readonly [string, string] = [
   'This assessment is browser-side only. It reviews what the browser can observe — cookies, web storage, response headers, and transport signals — and does not verify backend session invalidation, secret strength, server-side session rotation, or formal OWASP ASVS compliance. JWT signatures can be verified on demand in the Tokens tab but are not part of this report.',
-  'Subresource Integrity is checked against the document DOM captured at scan time (dynamically injected resources may be missed), WebSockets opened before the extension started observing are not seen, and the third-party inventory uses an approximate eTLD+1 heuristic rather than a full public-suffix list. Detected storage secrets and PII are redacted before display and export.',
+  'Subresource Integrity is checked against the document DOM captured at scan time (dynamically injected resources may be missed), WebSockets opened before the extension started observing are not seen, and the third-party inventory uses an approximate eTLD+1 heuristic rather than a full public-suffix list. Detected storage secrets and PII are redacted before display and export. LLM/RAG analysis is limited to browser-observable signals (direct provider-endpoint calls, request bodies to known providers, AI chatbot widgets, conversation storage, and CSP posture); it cannot verify server-side guardrails, model or training integrity, retrieval security, or excessive agent permissions, and outgoing prompt bodies are redacted in the background before they are cached.',
 ];
