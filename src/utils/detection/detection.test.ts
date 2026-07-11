@@ -12,6 +12,9 @@ function ids(value: string): string[] {
 const AWS_KEY = 'AKIA' + 'IOSFODNN7EXAMPLE';
 const OPENAI_KEY = 'sk-' + 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEF';
 const SLACK_TOKEN = 'xoxb-' + '123456789012-' + 'abcdefABCDEF0123';
+const ANTHROPIC_KEY = 'sk-ant-' + 'api03-' + 'aB3xZ9kD7mQ2wR6tY0uP5sA1eC4gH8jK';
+const HF_TOKEN = 'hf_' + 'aB3xZ9kD7mQ2wR6tY0uP5sA1eC4gH8jKlM';
+const REPLICATE_TOKEN = 'r8_' + 'aB3xZ9kD7mQ2wR6tY0uP5sA1eC4gH8jKlMnOp';
 
 // ── Validators ────────────────────────────────────────────────────────────────
 
@@ -63,6 +66,17 @@ describe('detectors — true positives', () => {
   });
   test('OpenAI key (entropy-gated)', () => {
     expect(ids(OPENAI_KEY)).toContain('openai-key');
+  });
+  test('Anthropic key wins over the OpenAI detector on the shared sk- prefix', () => {
+    const detected = ids(ANTHROPIC_KEY);
+    expect(detected).toContain('anthropic-key');
+    expect(detected).not.toContain('openai-key');
+  });
+  test('Hugging Face token', () => {
+    expect(ids(HF_TOKEN)).toContain('huggingface-token');
+  });
+  test('Replicate token', () => {
+    expect(ids(REPLICATE_TOKEN)).toContain('replicate-token');
   });
   test('Slack token', () => {
     expect(ids(SLACK_TOKEN)).toContain('slack-token');

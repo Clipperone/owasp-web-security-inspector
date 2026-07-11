@@ -197,7 +197,7 @@ describe('renderReportHtml — structure', () => {
 
   test('renders an empty-state line when there are no findings', () => {
     const out = renderReportHtml(makeReport({ findings: [] }));
-    expect(out).toContain('No cookie, token, storage, header, or transport findings');
+    expect(out).toContain('No cookie, token, storage, header, transport, or LLM/AI findings');
   });
 });
 

@@ -1,6 +1,7 @@
 import type {
   AssessmentFinding,
   CachedRequest,
+  CapturedRequestBody,
   ObservedWebSocket,
   PageResourceObservation,
   StorageEntry,
@@ -32,6 +33,7 @@ import {
   assessWebSockets,
 } from './pageResources';
 import { assessStorageSecrets } from './storageSecrets';
+import { assessLlm } from './llm';
 
 export function assessHeaders(activeUrl: string, requests: CachedRequest[]): AssessmentFinding[] {
   const findings: AssessmentFinding[] = [];
@@ -317,6 +319,9 @@ export function buildAssessmentFindings(params: {
   pageResources?: PageResourceObservation | null;
   domObservation?: TransportDomObservation | null;
   webSockets?: ObservedWebSocket[];
+  // Outgoing request bodies captured for likely-LLM endpoints (absent → no LLM
+  // prompt findings, only the reuse-based LLM signals still apply).
+  requestBodies?: CapturedRequestBody[];
 }): AssessmentFinding[] {
   const findings = [
     ...assessCookiesForUrl(params.cookies, params.activeUrl),
@@ -327,6 +332,13 @@ export function buildAssessmentFindings(params: {
     ...assessMixedContent(params.activeUrl, params.requests, params.pageResources ?? null, params.domObservation ?? null),
     ...assessWebSockets(params.activeUrl, params.webSockets ?? []),
     ...assessThirdParties(params.activeUrl, params.requests, params.cookies),
+    ...assessLlm({
+      activeUrl: params.activeUrl,
+      requests: params.requests,
+      pageResources: params.pageResources ?? null,
+      storageEntries: params.storageEntries,
+      requestBodies: params.requestBodies ?? [],
+    }),
   ];
 
   const unique = new Map<string, AssessmentFinding>();

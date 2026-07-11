@@ -29,6 +29,7 @@
 import type {
   ActiveTabInfo,
   CachedRequest,
+  CapturedRequestBody,
   CookieData,
   ExtensionMessage,
   ExtensionResponse,
@@ -38,6 +39,7 @@ import type {
   TransportDomObservation,
 } from '../types';
 import { DEFAULT_SETTINGS, LEGACY_STORAGE_KEYS, STORAGE_KEYS } from '../types';
+import { buildCapturedRequestBody, decodeRequestBody } from '../utils/requestBody';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -164,6 +166,81 @@ chrome.webRequest.onBeforeRequest.addListener(
     return undefined;
   },
   { urls: ['<all_urls>'], types: ['websocket'] },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Outgoing prompt body capture  (webRequest.onBeforeRequest per tab)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Passive LLM analysis needs to see what the page sends TO a model provider, but
+// request bodies are only visible in the background (the content-script
+// redaction path never runs here). To keep the project's invariant that raw
+// secrets/PII never persist in the clear, this listener runs the same detection
+// engine and caches only the REDACTED result. It is scoped by URL match patterns
+// to known LLM provider endpoints, so no arbitrary page's request body is ever
+// read — the tightest privacy scope, and it also bounds the work. No new
+// permission is required (webRequest + <all_urls> already cover requestBody);
+// the listener stays non-blocking (returns undefined).
+
+const TAB_REQUEST_BODIES_MAX = 20;
+
+/**
+ * URL match patterns for known LLM provider APIs. Only requests to these hosts
+ * ever have their body decoded — the tightest privacy scope, and a hard bound on
+ * work. Kept in sync with LLM_PROVIDER_HOSTS in utils/assessment/llm.ts (that
+ * module needs suffix logic; the webRequest filter needs match patterns).
+ */
+const LLM_ENDPOINT_URL_PATTERNS = [
+  '*://api.openai.com/*',
+  '*://api.anthropic.com/*',
+  '*://generativelanguage.googleapis.com/*',
+  '*://*.openai.azure.com/*',
+  '*://api.cohere.ai/*',
+  '*://api.cohere.com/*',
+  '*://api.mistral.ai/*',
+  '*://api-inference.huggingface.co/*',
+  '*://api.huggingface.co/*',
+  '*://api.replicate.com/*',
+  '*://api.groq.com/*',
+  '*://api.perplexity.ai/*',
+  '*://api.together.xyz/*',
+  '*://api.together.ai/*',
+  '*://openrouter.ai/*',
+  '*://*.openrouter.ai/*',
+];
+
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (details.tabId < 0) return undefined;
+    if (details.method !== 'POST' && details.method !== 'PUT' && details.method !== 'PATCH') return undefined;
+
+    const raw = decodeRequestBody(details.requestBody);
+    if (raw === null) return undefined;
+
+    void (async () => {
+      try {
+        // Redaction happens inside buildCapturedRequestBody, BEFORE anything is
+        // cached — no raw secret/PII is ever written to session storage.
+        const entry = buildCapturedRequestBody({
+          url: details.url,
+          method: details.method,
+          rawBody: raw,
+          timestamp: Date.now(),
+        });
+
+        const key = `tabRequestBodies:${details.tabId}`;
+        const stored = await chrome.storage.session.get(key);
+        const prev = (stored[key] as CapturedRequestBody[] | undefined) ?? [];
+        const updated = [entry, ...prev.filter(item => item.valueFingerprint !== entry.valueFingerprint)]
+          .slice(0, TAB_REQUEST_BODIES_MAX);
+        await chrome.storage.session.set({ [key]: updated });
+      } catch { /* silent */ }
+    })();
+
+    return undefined;
+  },
+  { urls: LLM_ENDPOINT_URL_PATTERNS, types: ['xmlhttprequest'] },
+  ['requestBody'],
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -350,6 +427,14 @@ async function handleMessage(
         const key    = `tabWebSockets:${id}`;
         const stored = await chrome.storage.session.get(key);
         const data   = (stored[key] as ObservedWebSocket[] | undefined) ?? [];
+        return { success: true, data };
+      }
+
+      case 'GET_TAB_REQUEST_BODIES': {
+        const id     = message.payload as number;
+        const key    = `tabRequestBodies:${id}`;
+        const stored = await chrome.storage.session.get(key);
+        const data   = (stored[key] as CapturedRequestBody[] | undefined) ?? [];
         return { success: true, data };
       }
 

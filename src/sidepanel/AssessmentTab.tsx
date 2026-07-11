@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ActiveTabInfo,
   CachedRequest,
+  CapturedRequestBody,
   HeaderAssessmentCheck,
   HeaderAssessmentKind,
   HeaderAssessmentReport,
@@ -30,7 +31,7 @@ import {
   toneTextClasses,
 } from './ui';
 
-type AssessmentSubtabId = 'headers' | 'transport' | 'cookies' | 'tokens' | 'storage';
+type AssessmentSubtabId = 'headers' | 'transport' | 'cookies' | 'tokens' | 'storage' | 'llm';
 
 const ASSESSMENT_SUBTABS: Array<{ id: AssessmentSubtabId; label: string }> = [
   { id: 'headers', label: 'Headers' },
@@ -38,6 +39,7 @@ const ASSESSMENT_SUBTABS: Array<{ id: AssessmentSubtabId; label: string }> = [
   { id: 'cookies', label: 'Cookies' },
   { id: 'tokens', label: 'Tokens' },
   { id: 'storage', label: 'Storage' },
+  { id: 'llm', label: 'LLM/AI' },
 ];
 
 const KIND_LABELS: Record<HeaderAssessmentKind, string> = {
@@ -146,6 +148,7 @@ export const AssessmentTab: React.FC = () => {
   const [storageScan, setStorageScan] = useState<StorageScanResult | null>(null);
   const [pageResources, setPageResources] = useState<PageResourceObservation | null>(null);
   const [webSockets, setWebSockets] = useState<ObservedWebSocket[]>([]);
+  const [requestBodies, setRequestBodies] = useState<CapturedRequestBody[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -172,13 +175,14 @@ export const AssessmentTab: React.FC = () => {
         chrome.runtime.sendMessage({ type: 'RUN_PAGE_RESOURCE_SCAN' }).catch(() => null),
       ]);
 
-      const [headersResponse, transportResponse, storageResponse, cookiesResponse, pageResourcesResponse, webSocketsResponse] = await Promise.all([
+      const [headersResponse, transportResponse, storageResponse, cookiesResponse, pageResourcesResponse, webSocketsResponse, requestBodiesResponse] = await Promise.all([
         chrome.runtime.sendMessage({ type: 'GET_TAB_HEADERS', payload: info.tabId }),
         chrome.runtime.sendMessage({ type: 'GET_TRANSPORT_OBSERVATIONS' }),
         chrome.runtime.sendMessage({ type: 'GET_STORAGE_TOKENS' }),
         chrome.runtime.sendMessage({ type: 'GET_COOKIES', payload: info.url }),
         chrome.runtime.sendMessage({ type: 'GET_PAGE_RESOURCES' }),
         chrome.runtime.sendMessage({ type: 'GET_TAB_WEBSOCKETS', payload: info.tabId }),
+        chrome.runtime.sendMessage({ type: 'GET_TAB_REQUEST_BODIES', payload: info.tabId }),
       ]);
 
       setRequests(headersResponse?.success ? (headersResponse.data as CachedRequest[] ?? []) : []);
@@ -187,6 +191,7 @@ export const AssessmentTab: React.FC = () => {
       setCookies(cookiesResponse?.success ? (cookiesResponse.data as chrome.cookies.Cookie[] ?? []) : []);
       setPageResources(pageResourcesResponse?.success ? (pageResourcesResponse.data as PageResourceObservation | null ?? null) : null);
       setWebSockets(webSocketsResponse?.success ? (webSocketsResponse.data as ObservedWebSocket[] ?? []) : []);
+      setRequestBodies(requestBodiesResponse?.success ? (requestBodiesResponse.data as CapturedRequestBody[] ?? []) : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Assessment failed to load.');
     } finally {
@@ -246,8 +251,9 @@ export const AssessmentTab: React.FC = () => {
       pageResources,
       domObservation: transportObservation,
       webSockets,
+      requestBodies,
     }),
-    [activeUrl, cookies, storageEntries, requests, pageResources, transportObservation, webSockets],
+    [activeUrl, cookies, storageEntries, requests, pageResources, transportObservation, webSockets, requestBodies],
   );
 
   const activeFilter = useMemo<ReportFilter>(
@@ -261,6 +267,7 @@ export const AssessmentTab: React.FC = () => {
   const storageFindings = useMemo(() => filteredFindings.filter(f => f.category === 'storage'), [filteredFindings]);
   const headerFindings = useMemo(() => filteredFindings.filter(f => f.category === 'headers'), [filteredFindings]);
   const transportFindings = useMemo(() => filteredFindings.filter(f => f.category === 'transport'), [filteredFindings]);
+  const llmFindings = useMemo(() => filteredFindings.filter(f => f.category === 'llm'), [filteredFindings]);
 
   // The exported report honours the same filters shown in the UI, so "what you
   // see is what you export"; severityCounts are recomputed on the filtered set.
@@ -303,6 +310,8 @@ export const AssessmentTab: React.FC = () => {
         const idb = storageEntries.filter(e => e.area === 'indexedDB').length;
         return `Local: ${local} · Session: ${session} · IDB: ${idb} · Storage findings: ${storageFindings.length}`;
       }
+      case 'llm':
+        return `LLM/AI findings: ${llmFindings.length}`;
       case 'headers':
       default:
         return `Captured requests: ${headerReport.capturedRequestCount} · Logout-like: ${headerReport.logoutRequestCount} · Observed headers: ${headerReport.observedHeaderNames.length}`;
@@ -336,7 +345,7 @@ export const AssessmentTab: React.FC = () => {
       </div>
 
       <div className="px-2.5 py-2 border-b border-gray-800 bg-gray-900/20 shrink-0 space-y-2">
-        <div className="grid grid-cols-5 gap-1">
+        <div className="grid grid-cols-6 gap-1">
           {ASSESSMENT_SUBTABS.map(tab => (
             <button
               key={tab.id}
@@ -453,11 +462,17 @@ export const AssessmentTab: React.FC = () => {
             emptyTitle="No token findings"
             emptyHint="No JWT or opaque token risks were observed in cookies or web storage for this context."
           />
-        ) : (
+        ) : activeSubtab === 'storage' ? (
           <FindingList
             findings={storageFindings}
             emptyTitle="No storage findings"
             emptyHint="No sensitive tokens were observed in localStorage, sessionStorage, or IndexedDB for this context."
+          />
+        ) : (
+          <FindingList
+            findings={llmFindings}
+            emptyTitle="No LLM/RAG signals observed"
+            emptyHint="No LLM provider endpoints, AI chatbot widgets, exposed provider keys, or prompt payloads were observed for this page."
           />
         )}
       </div>

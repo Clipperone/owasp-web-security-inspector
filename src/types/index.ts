@@ -209,6 +209,34 @@ export interface CachedRequest {
   responseHeaders: { name: string; value: string }[];
 }
 
+/**
+ * An outgoing request body captured by the background `onBeforeRequest` listener
+ * for likely-LLM endpoints. The raw body is only ever available in the
+ * background; secrets/PII are run through the detection engine and redacted
+ * THERE before caching, so `redactedSnippet` never carries a raw secret — the
+ * same "redact at the source" invariant used for web-storage scanning.
+ */
+export interface CapturedRequestBody {
+  url: string;
+  method: string;
+  /** A bounded, redacted snippet of the decoded body (secrets/PII masked). */
+  redactedSnippet: string;
+  /** Secret/PII matches found in the body (absent when none). */
+  detections?: DetectionHit[];
+  /**
+   * True when the payload carried a system/developer instruction (an LLM07
+   * signal): a chat message with role `system`/`developer`, or a top-level
+   * `system`/`instructions` field. Computed in the background from the raw body.
+   */
+  hasSystemPrompt?: boolean;
+  /** Length of the original decoded body (pre-truncation, pre-redaction). */
+  valueLength: number;
+  /** FNV-1a 32-bit hex of the raw decoded body — stable change detection. */
+  valueFingerprint: string;
+  /** Date.now() at the moment of capture. */
+  timestamp: number;
+}
+
 export type HeaderAssessmentStatus = 'pass' | 'fail' | 'warn' | 'not-applicable';
 
 export type HeaderAssessmentKind = 'required' | 'deprecated' | 'advisory';
@@ -291,7 +319,7 @@ export interface TransportTlsReport {
 
 export type AssessmentSeverity = 'high' | 'medium' | 'low' | 'info';
 
-export type AssessmentCategory = 'cookies' | 'tokens' | 'headers' | 'storage' | 'transport';
+export type AssessmentCategory = 'cookies' | 'tokens' | 'headers' | 'storage' | 'transport' | 'llm';
 
 export type CookieAssessmentCategory = 'session/auth' | 'csrf' | 'preference' | 'analytics/other';
 
@@ -351,6 +379,8 @@ export type MessageType =
   | 'RUN_PAGE_RESOURCE_SCAN'
   // Observed WebSocket connections for the active tab
   | 'GET_TAB_WEBSOCKETS'
+  // Redacted outgoing request bodies captured for likely-LLM endpoints
+  | 'GET_TAB_REQUEST_BODIES'
   // Tab info
   | 'GET_ACTIVE_TAB_INFO'
   // Live response header cache
